@@ -1,4 +1,5 @@
 # etl/load_data.py
+from typing import Dict
 from sqlalchemy.orm import Session
 from db.models import DimTime, DimWeather, DimHoliday
 from db.database import SessionLocal

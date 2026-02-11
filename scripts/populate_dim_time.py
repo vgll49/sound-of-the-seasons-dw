@@ -4,10 +4,10 @@ from db.models import DimTime
 from db.database import SessionLocal
 from datetime import datetime, timedelta
 
-def populate_dim_time_2022():
+def populate_dim_time():
     db: Session = SessionLocal()
     
-    start_date = datetime(2022, 1, 1).date()
+    start_date = datetime(2020, 1, 1).date()
     end_date = datetime(2022, 12, 31).date()
     
     current = start_date
@@ -49,5 +49,5 @@ def populate_dim_time_2022():
         db.close()
 
 if __name__ == "__main__":
-    populate_dim_time_2022()
+    populate_dim_time()
 

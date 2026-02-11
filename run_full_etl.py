@@ -47,7 +47,7 @@ def run_script(script_path: str, description: str):
             create_db.create_database()
         elif script_name == "populate_dim_time":
             from scripts import populate_dim_time
-            populate_dim_time.populate_dim_time_2022()
+            populate_dim_time.populate_dim_time()
         elif script_name == "prepare_charts":
             from scripts import prepare_charts
             prepare_charts.prepare_charts()
@@ -139,7 +139,7 @@ def validate_data():
         db.close()
         
         logger.info("\n📊 Database Statistics:")
-        logger.info(f"  DimTime:        {stats['DimTime']:>8,} rows (expected: 365)")
+        logger.info(f"  DimTime:        {stats['DimTime']:>8,} rows (expected: 1096)")
         logger.info(f"  DimTrack:       {stats['DimTrack']:>8,} rows")
         logger.info(f"  DimWeather:     {stats['DimWeather']:>8,} rows (expected: ~5,840)")
         logger.info(f"  DimHoliday:     {stats['DimHoliday']:>8,} rows")
@@ -179,7 +179,7 @@ async def main():
     ║                                                           ║
     ║        🎵 SOUND OF SEASONS - DATA WAREHOUSE ETL 🎵        ║
     ║                                                           ║
-    ║           Spotify Charts × Weather × Holidays            ║
+    ║           Spotify Charts × Weather × Holidays             ║
     ║                      2022 Dataset                         ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
@@ -258,13 +258,13 @@ async def main():
         logger.info("""
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║              ✅ ETL COMPLETED SUCCESSFULLY! ✅             ║
+    ║              ✅ ETL COMPLETED SUCCESSFULLY! ✅           ║
     ║                                                           ║
-    ║     Your data warehouse is ready for analysis! 🎉         ║
+    ║     Your data warehouse is ready for analysis! 🎉        ║
     ║                                                           ║
     ║  Next steps:                                              ║
-    ║  1. Run queries: python scripts/sample_queries.py        ║
-    ║  2. Generate viz: python visualization/generate.py       ║
+    ║  1. Run queries: python scripts/sample_queries.py         ║
+    ║  2. Generate viz: python visualization/generate.py        ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
         """)
@@ -272,9 +272,9 @@ async def main():
         logger.error("""
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║                ❌ ETL FAILED ❌                            ║
+    ║                ❌ ETL FAILED ❌                          ║
     ║                                                           ║
-    ║  Check the logs above for error details.                 ║
+    ║  Check the logs above for error details.                  ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
         """)
