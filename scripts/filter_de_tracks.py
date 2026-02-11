@@ -1,9 +1,6 @@
 import pandas as pd
 import os
 
-# setup root
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 # paths
 input_csv = os.path.join(project_root, "data", "raw", "charts.csv")
 output_csv = os.path.join(project_root, "data", "processed", "spotify_charts_de.csv")
