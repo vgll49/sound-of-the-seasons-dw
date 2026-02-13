@@ -1,24 +1,32 @@
-# .github/workflows/update_charts.yml
-name: Update Charts Weekly
+name: Update Dashboard
 
 on:
-  schedule:
-    - cron: '0 2 * * 1'  # Jeden Montag um 2 Uhr
-  workflow_dispatch:  # Manueller Trigger
+  workflow_dispatch:
 
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
+    
     steps:
       - uses: actions/checkout@v3
+      
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: python etl/scrape_new_charts.py
-      - run: python etl/run_etl.py
-      - run: python visualization/generate_plots.py
-      - name: Deploy to GitHub Pages
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Run ETL with Secrets
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        run: python run_full_etl.py
+      
+      - name: Generate Dashboard
+        run: python visualization/generate_dashboard.py
+      
+      - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -3,7 +3,7 @@ import os
 
 # paths
 input_csv = os.path.join(project_root, "data", "raw", "charts.csv")
-output_csv = os.path.join(project_root, "data", "processed", "spotify_charts_de.csv")
+output_csv = os.path.join(project_root, "data", "processed", "spotify_charts_global_de.csv")
 
 # read csv
 df = pd.read_csv(input_csv)

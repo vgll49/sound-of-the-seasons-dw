@@ -1,6 +1,5 @@
 # scripts/load_charts.py
 import os
-
 import pandas as pd
 from sqlalchemy.orm import Session
 from db.models import DimTrack, DimTime, FactTrackChart
@@ -13,8 +12,8 @@ logger = logging.getLogger(__name__)
 def load_tracks_and_facts():
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    # Charts CSV
-    charts_csv = os.path.join(project_root, "data", "processed", "spotify_charts_de.csv")
+    # Charts CSV (Global + DE)
+    charts_csv = os.path.join(project_root, "data", "processed", "spotify_charts_global_de.csv")
     
     # Audio Features CSV
     tracks_csv = os.path.join(project_root, "data", "raw", "tracks.csv")
@@ -24,66 +23,108 @@ def load_tracks_and_facts():
     charts_df = pd.read_csv(charts_csv)
     charts_df['date'] = pd.to_datetime(charts_df['date'])
     
-    logger.info(f"  Charts: {len(charts_df):,} rows, {charts_df['track_id'].nunique():,} unique tracks")
+    logger.info(f"  Charts: {len(charts_df):,} rows")
+    logger.info(f"  Countries: {charts_df['country'].unique()}")
+    logger.info(f"  Unique tracks: {charts_df['track_id'].nunique():,}")
     
-    # Load Audio Features (optional)
-    audio_features_df = None
+    # Load Audio Features
+    audio_features_dict = {}
     if os.path.exists(tracks_csv):
         logger.info("Loading audio features...")
         audio_features_df = pd.read_csv(tracks_csv)
         
-        # Rename 'id' to 'track_id' if needed
         if 'id' in audio_features_df.columns and 'track_id' not in audio_features_df.columns:
             audio_features_df.rename(columns={'id': 'track_id'}, inplace=True)
         
-        # Remove duplicates
         audio_features_df = audio_features_df.drop_duplicates(subset=['track_id'], keep='first')
         
-        logger.info(f"  Audio features: {len(audio_features_df):,} unique tracks")
+        # Create lookup dict
+        for _, row in audio_features_df.iterrows():
+            audio_features_dict[row['track_id']] = {
+                'danceability': row.get('danceability'),
+                'energy': row.get('energy'),
+                'valence': row.get('valence'),
+                'tempo': row.get('tempo'),
+                'loudness': row.get('loudness'),
+                'speechiness': row.get('speechiness'),
+                'acousticness': row.get('acousticness'),
+                'instrumentalness': row.get('instrumentalness'),
+                'liveness': row.get('liveness'),
+                'key': row.get('key'),
+                'mode': row.get('mode'),
+                'time_signature': row.get('time_signature'),
+                'popularity': row.get('popularity'),
+                'release_date': row.get('release_date')
+            }
+        
+        logger.info(f"  Audio features: {len(audio_features_dict):,} unique tracks")
     else:
         logger.warning(f"  Audio features file not found: {tracks_csv}")
-        logger.warning("  Continuing without audio features...")
     
     db: Session = SessionLocal()
     
     try:
         # 1. Load unique tracks into DimTrack
-        logger.info("\nLoading tracks into DimTrack...")
-        unique_tracks = charts_df.drop_duplicates(subset=['track_id'])
+        logger.info("\nPreparing tracks...")
+        unique_tracks = charts_df[['track_id', 'name', 'artists', 'artist_genres', 'duration', 'explicit']].copy()
+        unique_tracks = unique_tracks.drop_duplicates(subset=['track_id'])
         unique_tracks = unique_tracks.dropna(subset=['name'])
-
+        
+        logger.info(f"  Unique tracks: {len(unique_tracks):,}")
+        
+        logger.info("Creating track records...")
         track_records = []
         tracks_with_features = 0
         
-        for _, row in unique_tracks.iterrows():
-            # Basic track info
+        def safe_float(val):
+            return float(val) if pd.notna(val) else None
+        
+        def safe_int(val):
+            return int(val) if pd.notna(val) else None
+        
+        for track_id, name, artists, genre, duration, explicit in zip(
+            unique_tracks['track_id'],
+            unique_tracks['name'],
+            unique_tracks['artists'],
+            unique_tracks.get('artist_genres', [None]*len(unique_tracks)),
+            unique_tracks.get('duration', [None]*len(unique_tracks)),
+            unique_tracks.get('explicit', [False]*len(unique_tracks))
+        ):
+            features = audio_features_dict.get(track_id, {})
+            
             track = DimTrack(
-                track_id=row['track_id'],
-                track_name=row['name'],
-                artist_names=row['artists'],
-                genre=row.get('artist_genres', None),
-                duration_ms=row.get('duration', None),
-                explicit_flag=row.get('explicit', False)
+                track_id=track_id,
+                track_name=name,
+                artist_names=artists,
+                genre=genre,
+                duration_ms=duration,
+                explicit_flag=explicit,
+                # Meta
+                popularity=safe_int(features.get('popularity')),
+                release_date=features.get('release_date'),
+                # Core Audio Features
+                danceability=safe_float(features.get('danceability')),
+                energy=safe_float(features.get('energy')),
+                valence=safe_float(features.get('valence')),
+                tempo=safe_float(features.get('tempo')),
+                # Extended Audio Features
+                loudness=safe_float(features.get('loudness')),
+                speechiness=safe_float(features.get('speechiness')),
+                acousticness=safe_float(features.get('acousticness')),
+                instrumentalness=safe_float(features.get('instrumentalness')),
+                liveness=safe_float(features.get('liveness')),
+                key=safe_int(features.get('key')),
+                mode=safe_int(features.get('mode')),
+                time_signature=safe_int(features.get('time_signature'))
             )
             
-            # Try to add audio features
-            if audio_features_df is not None:
-                feature_row = audio_features_df[audio_features_df['track_id'] == row['track_id']]
-                
-                if not feature_row.empty:
-                    feat = feature_row.iloc[0]
-                    
-                    # Add all available audio features
-                    track.danceability = float(feat['danceability']) if pd.notna(feat.get('danceability')) else None
-                    track.energy = float(feat['energy']) if pd.notna(feat.get('energy')) else None
-                    track.valence = float(feat['valence']) if pd.notna(feat.get('valence')) else None
-                    track.tempo = float(feat['tempo']) if pd.notna(feat.get('tempo')) else None
-                    
-                    tracks_with_features += 1
+            if track.danceability is not None:
+                tracks_with_features += 1
             
             track_records.append(track)
         
-        # Save to DB
+        # Bulk insert tracks
+        logger.info(f"Inserting {len(track_records):,} tracks...")
         db.bulk_save_objects(track_records)
         db.commit()
         
@@ -94,71 +135,72 @@ def load_tracks_and_facts():
         logger.info(f"  With audio features:    {tracks_with_features:,} ({coverage:.1f}%)")
         logger.info(f"  Without audio features: {total_tracks - tracks_with_features:,}")
         
-        # Coverage assessment
-        if coverage >= 70:
-            logger.info(f"  🎉 Excellent coverage!")
-        elif coverage >= 50:
-            logger.info(f"  👍 Good coverage")
-        elif coverage >= 30:
-            logger.warning(f"  ⚠️  Moderate coverage - consider filtering to tracks with features")
-        else:
-            logger.warning(f"  ❌ Low coverage - audio features might not match your charts")
-        
         # 2. Create date lookup
         logger.info("\nCreating date lookup...")
-        date_lookup = {}
-        dates = db.query(DimTime.date_id, DimTime.date).all()
-        for d in dates:
-            date_lookup[d.date] = d.date_id
+        date_lookup = {d.date: d.date_id for d in db.query(DimTime.date_id, DimTime.date).all()}
+        logger.info(f"  Loaded {len(date_lookup):,} dates")
         
         # 3. Load facts into FactTrackChart
-        logger.info("Loading chart facts...")
-        fact_records = []
-        batch_size = 1000
-        skipped = 0
+        logger.info("Preparing chart facts...")
         
-        for idx, row in charts_df.iterrows():
-            date_id = date_lookup.get(row['date'].date())
-            if not date_id:
-                #logger.warning(f"Date {row['date']} not found in DimTime")
-                skipped += 1
-                continue
-            
-            fact = FactTrackChart(
+        charts_df['date_only'] = charts_df['date'].dt.date
+        charts_df['date_id'] = charts_df['date_only'].map(date_lookup)
+        
+        valid_facts = charts_df[charts_df['date_id'].notna()].copy()
+        skipped = len(charts_df) - len(valid_facts)
+        
+        if skipped > 0:
+            logger.warning(f"  Skipping {skipped:,} rows without matching dates")
+        
+        logger.info(f"  Creating {len(valid_facts):,} fact records...")
+        
+        # Create fact records with country
+        fact_records = [
+            FactTrackChart(
                 track_id=row['track_id'],
-                date_id=date_id,
+                date_id=int(row['date_id']),
+                country=row['country'],  # NEU: Country speichern!
                 stream_count=row['streams'],
                 chart_position=row['position'],
-                # weather_id and holiday_id werden später verknüpft
                 weather_id=None,
                 holiday_id=None
             )
-            fact_records.append(fact)
-            
-            if len(fact_records) >= batch_size:
-                db.bulk_save_objects(fact_records)
-                db.commit()
-                logger.info(f"  Inserted {idx+1:,}/{len(charts_df):,} facts...")
-                fact_records = []
+            for _, row in valid_facts.iterrows()
+        ]
         
-        # Insert remaining
-        if fact_records:
-            db.bulk_save_objects(fact_records)
-            db.commit()
+        # Bulk insert in batches
+        logger.info("Inserting facts...")
+        batch_size = 5000
+        
+        for i in range(0, len(fact_records), batch_size):
+            batch = fact_records[i:i+batch_size]
+            db.bulk_save_objects(batch)
+            db.flush()
+            
+            if (i + batch_size) % 10000 == 0:
+                logger.info(f"  Progress: {i+batch_size:,}/{len(fact_records):,}")
+        
+        db.commit()
         
         total_facts = db.query(FactTrackChart).count()
         logger.info(f"✓ Total facts in database: {total_facts:,}")
         
-        if skipped > 0:
-            logger.warning(f"  Skipped {skipped} rows (date not in DimTime)")
+        # Country breakdown
+        logger.info("\nBreakdown by country:")
+        for country in ['de', 'global']:
+            count = db.query(FactTrackChart).filter(FactTrackChart.country == country).count()
+            logger.info(f"  {country:8s}: {count:,}")
         
         # Final summary
         logger.info(f"\n{'='*60}")
         logger.info("SUMMARY")
         logger.info(f"{'='*60}")
-        logger.info(f"Tracks loaded:        {total_tracks:,}")
+        logger.info(f"Tracks loaded:          {total_tracks:,}")
         logger.info(f"Audio feature coverage: {coverage:.1f}%")
-        logger.info(f"Facts loaded:         {total_facts:,}")
+        logger.info(f"Facts loaded:           {total_facts:,}")
+        logger.info(f"  - DE:                 {db.query(FactTrackChart).filter(FactTrackChart.country == 'de').count():,}")
+        logger.info(f"  - Global:             {db.query(FactTrackChart).filter(FactTrackChart.country == 'global').count():,}")
+        logger.info(f"Skipped (no date):      {skipped:,}")
         logger.info(f"{'='*60}")
         
     except Exception as e:

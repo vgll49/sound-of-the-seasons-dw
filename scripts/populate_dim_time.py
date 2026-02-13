@@ -41,7 +41,7 @@ def populate_dim_time():
     try:
         db.bulk_save_objects(records)
         db.commit()
-        print(f"✓ Inserted {len(records)} dates for 2022")
+        print(f"✓ Inserted {len(records)} dates for start date: {start_date} to end date: {end_date}")
     except Exception as e:
         db.rollback()
         print(f"✗ Error: {e}")

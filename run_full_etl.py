@@ -1,7 +1,6 @@
 # run_full_etl.py
 """
 Master ETL Script - Sound of Seasons Data Warehouse
-Führt den kompletten ETL-Prozess aus (einmalig für 2022)
 """
 import asyncio
 import sys
@@ -78,8 +77,9 @@ async def run_etl():
         from etl.load_data import DataLoader
         from etl.link_facts import FactLinker
         
-        start_date = "2022-01-01"
+        start_date = "2020-01-01"
         end_date = "2022-12-31"
+        # TODO: Expand this
         year = 2022
         
         loader = DataLoader(batch_size=500)

@@ -1,3 +1,4 @@
+# db/models.py
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean,
     Date, ForeignKey
@@ -23,18 +24,29 @@ class DimTime(Base):
 class DimTrack(Base):
     __tablename__ = "dim_track"
 
-    track_id = Column(String, primary_key=True)  # Spotify ID
+    track_id = Column(String, primary_key=True)
     track_name = Column(String, nullable=False)
-    artist_names = Column(String)  # bewusst denormalisiert
+    artist_names = Column(String)
     genre = Column(String)
 
     duration_ms = Column(Integer)
     explicit_flag = Column(Boolean)
-
-    tempo = Column(Float)
-    valence = Column(Float)
-    danceability = Column(Float)
-    energy = Column(Float)
+    popularity = Column(Integer)  # 0-100
+    release_date = Column(String)  # YYYY oder YYYY-MM-DD
+    
+    # Audio Features (alle von Spotify)
+    danceability = Column(Float)       # 0.0-1.0
+    energy = Column(Float)             # 0.0-1.0
+    valence = Column(Float)            # 0.0-1.0 (Positivität)
+    tempo = Column(Float)              # BPM
+    loudness = Column(Float)           # dB (-60 to 0)
+    speechiness = Column(Float)        # 0.0-1.0
+    acousticness = Column(Float)       # 0.0-1.0
+    instrumentalness = Column(Float)   # 0.0-1.0
+    liveness = Column(Float)           # 0.0-1.0
+    key = Column(Integer)              # 0-11 (C, C#, D, ...)
+    mode = Column(Integer)             # 0=minor, 1=major
+    time_signature = Column(Integer)   # Beats per bar (3, 4, 5, ...)
 
 class DimWeather(Base):
     __tablename__ = "dim_weather"
@@ -72,6 +84,8 @@ class FactTrackChart(Base):
     date_id = Column(Integer, ForeignKey("dim_time.date_id"), nullable=False)
     weather_id = Column(Integer, ForeignKey("dim_weather.weather_id"))
     holiday_id = Column(Integer, ForeignKey("dim_holiday.holiday_id"))
+
+    country = Column(String, nullable=False) 
 
     stream_count = Column(Integer)
     chart_position = Column(Integer)
