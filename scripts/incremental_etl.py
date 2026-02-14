@@ -98,7 +98,7 @@ class IncrementalETL:
     def load_new_data(self):
         """Load new data into database using existing loader"""
         logger.info("Loading new data into database...")
-        from scripts.s05_load_soundcharts import load_soundcharts_data
+        from scripts.load_soundcharts_data import load_soundcharts_data
         load_soundcharts_data()
 
 
@@ -111,7 +111,7 @@ async def fetch_missing_charts(etl: IncrementalETL, missing_dates):
     logger.info(f"Fetching {len(missing_dates)} charts...")
     
     # Import and reuse ChartsFetcher
-    from scripts.s03_fetch_charts import ChartsFetcher
+    from scripts.soundcharts.fetch_charts import ChartsFetcher
     
     async with aiohttp.ClientSession() as session:
         service = SoundchartsService(session, etl.app_id, etl.api_key)
