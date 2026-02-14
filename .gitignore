@@ -4,3 +4,4 @@ venv
 __pycache__
 .cache
 test_spotify_api*
+.python-version

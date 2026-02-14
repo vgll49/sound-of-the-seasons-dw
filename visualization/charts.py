@@ -78,12 +78,12 @@ def create_mood_radar(df):
     return fig.to_html(include_plotlyjs=False, div_id='mood-chart', config={'displayModeBar': False})
 
 def create_holiday_chart(df):
-    """Chart: Holiday Effect"""
+    """Chart: Holiday Effect (from DimTime.is_public_holiday)"""
     fig = px.pie(
         df,
         values='total_streams',
         names='day_type',
-        title='Streaming: Feiertage vs Werktage',
+        title='Streaming: Feiertage vs Wochenende vs Werktage',
         color_discrete_sequence=px.colors.qualitative.Set3
     )
     

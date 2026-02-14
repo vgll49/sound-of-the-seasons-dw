@@ -1,18 +1,16 @@
-# run_full_etl.py
 """
-Master ETL Script - Sound of Seasons Data Warehouse
+Master ETL Orchestrator - Sound of Seasons Data Warehouse
+Coordinates all ETL steps in proper sequence
 """
 import asyncio
-import sys
-import os
-from pathlib import Path
-
-# Setup Python Path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
-
+import inspect
 import logging
 from datetime import datetime
+from config import (
+    START_DATE, END_DATE, EXPECTED_DAYS,
+    DATASET_NAME, DATASET_YEARS, DATE_RANGE_STR,
+    EXPECTED_DIM_WEATHER_MIN, EXPECTED_DIM_TRACK_MIN
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,102 +18,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def run_script(script_path: str, description: str):
-    """Führe ein Python-Script aus"""
-    logger.info(f"\n{'='*60}")
-    logger.info(f"STEP: {description}")
-    logger.info(f"{'='*60}")
+def run_step(step_num: int, name: str, func, *args, **kwargs):
+    """Execute a single ETL step"""
+    logger.info(f"\n{'='*70}")
+    logger.info(f"STEP {step_num}: {name}")
+    logger.info(f"{'='*70}")
     
     try:
-        # Import und execute
-        script_name = Path(script_path).stem
-        script_dir = Path(script_path).parent
-        
-        # Temporär ins Verzeichnis wechseln
-        original_dir = os.getcwd()
-        os.chdir(project_root)
-        
-        # if script_dir.name == "scripts":
-        #     from scripts import (
-        #         create_db, populate_dim_time, 
-        #         prepare_charts, load_charts
-        #     )
-            
-        if script_name == "create_db":
-            from scripts import create_db
-            create_db.create_database()
-        elif script_name == "populate_dim_time":
-            from scripts import populate_dim_time
-            populate_dim_time.populate_dim_time()
-        elif script_name == "prepare_charts":
-            from scripts import prepare_charts
-            prepare_charts.prepare_charts()
-        elif script_name == "load_charts":
-            from scripts import load_charts
-            load_charts.load_tracks_and_facts()
+        if inspect.iscoroutinefunction(func):
+            asyncio.run(func(*args, **kwargs))
         else:
-            raise ValueError(f"Unknown script: {script_name}")
-
-        
-        os.chdir(original_dir)
-        logger.info(f"✓ {description} completed successfully")
+            func(*args, **kwargs)
+        logger.info(f"Step {step_num} completed: {name}")
         return True
-        
     except Exception as e:
-        logger.error(f"✗ {description} failed: {e}")
-        return False
-
-async def run_etl():
-    """Führe ETL (Weather + Holidays) aus"""
-    logger.info(f"\n{'='*60}")
-    logger.info(f"STEP: ETL - Fetch Weather & Holiday Data")
-    logger.info(f"{'='*60}")
-    
-    try:
-        from etl.fetch_weather import WeatherFetcher
-        from etl.fetch_holidays import HolidayFetcher
-        from etl.load_data import DataLoader
-        from etl.link_facts import FactLinker
-        
-        start_date = "2020-01-01"
-        end_date = "2022-12-31"
-        # TODO: Expand this
-        year = 2022
-        
-        loader = DataLoader(batch_size=500)
-        
-        # Weather
-        logger.info("\n→ Fetching Weather Data...")
-        weather_fetcher = WeatherFetcher(start_date=start_date, end_date=end_date)
-        await loader.load_weather(weather_fetcher)
-        
-        # Holidays
-        logger.info("\n→ Fetching Holiday Data...")
-        holiday_fetcher = HolidayFetcher(year=year)
-        await loader.load_holidays(holiday_fetcher)
-        
-        # Link Facts
-        logger.info("\n→ Linking Facts to Dimensions...")
-        linker = FactLinker()
-        linker.link_weather_to_facts()
-        linker.link_holidays_to_facts()
-        
-        logger.info("✓ ETL completed successfully")
-        return True
-        
-    except Exception as e:
-        logger.error(f"✗ ETL failed: {e}")
+        logger.error(f"Step {step_num} failed: {name}")
+        logger.error(f"  Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def validate_data():
-    """Validiere die geladenen Daten"""
-    logger.info(f"\n{'='*60}")
-    logger.info(f"STEP: Data Validation")
-    logger.info(f"{'='*60}")
+    """Validate loaded data"""
+    logger.info(f"\n{'='*70}")
+    logger.info(f"DATA VALIDATION")
+    logger.info(f"{'='*70}")
     
     try:
         from db.database import SessionLocal
-        from db.models import DimTime, DimTrack, DimWeather, DimHoliday, FactTrackChart
+        from db.models import DimTime, DimTrack, DimWeather, FactTrackChart
         
         db = SessionLocal()
         
@@ -123,64 +54,99 @@ def validate_data():
             'DimTime': db.query(DimTime).count(),
             'DimTrack': db.query(DimTrack).count(),
             'DimWeather': db.query(DimWeather).count(),
-            'DimHoliday': db.query(DimHoliday).count(),
             'FactTrackChart': db.query(FactTrackChart).count(),
         }
         
-        # Facts mit Verknüpfungen
         with_weather = db.query(FactTrackChart).filter(
             FactTrackChart.weather_id.isnot(None)
         ).count()
         
-        with_holidays = db.query(FactTrackChart).filter(
-            FactTrackChart.holiday_id.isnot(None)
+        with_features = db.query(DimTrack).filter(
+            DimTrack.danceability.isnot(None)
         ).count()
         
         db.close()
         
-        logger.info("\n📊 Database Statistics:")
-        logger.info(f"  DimTime:        {stats['DimTime']:>8,} rows (expected: 1096)")
-        logger.info(f"  DimTrack:       {stats['DimTrack']:>8,} rows")
-        logger.info(f"  DimWeather:     {stats['DimWeather']:>8,} rows (expected: ~5,840)")
-        logger.info(f"  DimHoliday:     {stats['DimHoliday']:>8,} rows")
+        logger.info("\nDatabase Statistics:")
+        logger.info(f"  DimTime:        {stats['DimTime']:>8,} rows (expected: {EXPECTED_DAYS:,})")
+        logger.info(f"  DimTrack:       {stats['DimTrack']:>8,} rows (>={EXPECTED_DIM_TRACK_MIN:,})")
+        logger.info(f"    w/ features:  {with_features:>8,} ({with_features/stats['DimTrack']*100:.1f}%)")
+        logger.info(f"  DimWeather:     {stats['DimWeather']:>8,} rows (>={EXPECTED_DIM_WEATHER_MIN})")
         logger.info(f"  FactTrackChart: {stats['FactTrackChart']:>8,} rows")
-        logger.info(f"\n🔗 Fact Linkages:")
+        logger.info(f"\nFact Linkages:")
         logger.info(f"  With Weather:   {with_weather:>8,} ({with_weather/stats['FactTrackChart']*100:.1f}%)")
-        logger.info(f"  With Holidays:  {with_holidays:>8,} ({with_holidays/stats['FactTrackChart']*100:.1f}%)")
         
-        # Validierung
         errors = []
-        if stats['DimTime'] != 365:
-            errors.append(f"DimTime should have 365 rows, has {stats['DimTime']}")
-        if stats['DimWeather'] < 5000:
-            errors.append(f"DimWeather seems incomplete ({stats['DimWeather']} rows)")
+        warnings = []
+        
+        if stats['DimTime'] != EXPECTED_DAYS:
+            errors.append(f"DimTime should have {EXPECTED_DAYS} rows, has {stats['DimTime']}")
+        
+        if stats['DimWeather'] < EXPECTED_DIM_WEATHER_MIN:
+            errors.append(f"DimWeather incomplete ({stats['DimWeather']} rows)")
+        
         if stats['FactTrackChart'] == 0:
-            errors.append("FactTrackChart is empty!")
+            errors.append("FactTrackChart is empty")
+        
+        if stats['DimTrack'] < EXPECTED_DIM_TRACK_MIN:
+            warnings.append(f"DimTrack might be incomplete ({stats['DimTrack']} rows)")
+        
+        if with_features / stats['DimTrack'] < 0.90:
+            warnings.append(f"Audio feature coverage low ({with_features/stats['DimTrack']*100:.1f}%)")
+        
+        if with_weather / stats['FactTrackChart'] < 0.99:
+            warnings.append(f"Weather linkage incomplete ({with_weather/stats['FactTrackChart']*100:.1f}%)")
         
         if errors:
-            logger.warning("\n⚠️  Validation Warnings:")
+            logger.error("\nVALIDATION ERRORS:")
             for error in errors:
-                logger.warning(f"  - {error}")
+                logger.error(f"  - {error}")
             return False
         
-        logger.info("\n✓ All validations passed!")
+        if warnings:
+            logger.warning("\nValidation Warnings:")
+            for warning in warnings:
+                logger.warning(f"  - {warning}")
+        
+        logger.info("\nAll critical validations passed")
         return True
         
     except Exception as e:
-        logger.error(f"✗ Validation failed: {e}")
+        logger.error(f"Validation failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
-async def main():
-    """Hauptfunktion - orchestriert den gesamten ETL-Prozess"""
+async def run_weather_etl():
+    """Run weather fetching and loading"""
+    import aiohttp
+    from services.weather_service import WeatherService
+    from services.data_loader import DataLoader
+    from config import BATCH_SIZE_WEATHER
+    
+    async with aiohttp.ClientSession() as session:
+        weather_service = WeatherService(
+            session=session,
+            start_date=START_DATE.isoformat(),
+            end_date=END_DATE.isoformat()
+        )
+        
+        loader = DataLoader(batch_size=BATCH_SIZE_WEATHER)
+        await loader.load_weather(weather_service)
+
+def main():
+    """Main ETL orchestration"""
     start_time = datetime.now()
     
-    logger.info("""
+    logger.info(f"""
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║        🎵 SOUND OF SEASONS - DATA WAREHOUSE ETL 🎵        ║
+    ║        SOUND OF SEASONS - DATA WAREHOUSE ETL              ║
     ║                                                           ║
-    ║           Spotify Charts × Weather × Holidays             ║
-    ║                      2022 Dataset                         ║
+    ║           Spotify Charts × Weather × Seasons              ║
+    ║              {DATASET_NAME:<40} ║
+    ║              Period: {DATE_RANGE_STR:<34} ║
+    ║              Years:  {DATASET_YEARS:<34} ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
     """)
@@ -188,53 +154,33 @@ async def main():
     steps = []
     
     # Step 1: Create Database
-    success = run_script(
-        "scripts/create_db.py",
-        "Create Database Schema"
-    )
+    from scripts.create_db import create_database
+    success = run_step(1, "Create Database Schema", create_database)
     steps.append(("Create Database", success))
     if not success:
-        logger.error("❌ ETL aborted - Database creation failed")
         return
     
     # Step 2: Populate DimTime
-    success = run_script(
-        "scripts/populate_dim_time.py",
-        "Populate Time Dimension (2022)"
-    )
+    from scripts.populate_dim_time import populate_dim_time
+    success = run_step(2, f"Populate Time Dimension ({DATASET_YEARS})", populate_dim_time)
     steps.append(("Populate DimTime", success))
     if not success:
-        logger.error("❌ ETL aborted - DimTime population failed")
         return
     
-    # Step 3: Prepare Charts
-    success = run_script(
-        "scripts/prepare_charts.py",
-        "Prepare Chart Data (Filter & Clean)"
-    )
-    steps.append(("Prepare Charts", success))
+    # Step 3: Fetch & Load Weather
+    success = run_step(3, "Fetch & Load Weather Data", run_weather_etl)
+    steps.append(("Weather ETL", success))
     if not success:
-        logger.error("❌ ETL aborted - Chart preparation failed")
         return
     
-    # Step 4: Load Charts
-    success = run_script(
-        "scripts/load_charts.py",
-        "Load Charts into Database"
-    )
-    steps.append(("Load Charts", success))
+    # Step 4: Load Soundcharts Data
+    from scripts.load_soundcharts_data import load_soundcharts_data
+    success = run_step(4, "Load Soundcharts Charts + Features", load_soundcharts_data)
+    steps.append(("Load Soundcharts Data", success))
     if not success:
-        logger.error("❌ ETL aborted - Chart loading failed")
         return
     
-    # Step 5: Run ETL (Weather + Holidays + Linking)
-    success = await run_etl()
-    steps.append(("Fetch & Link Weather/Holidays", success))
-    if not success:
-        logger.error("❌ ETL aborted - Weather/Holiday ETL failed")
-        return
-    
-    # Step 6: Validate
+    # Step 5: Validate
     success = validate_data()
     steps.append(("Data Validation", success))
     
@@ -242,29 +188,33 @@ async def main():
     end_time = datetime.now()
     duration = end_time - start_time
     
-    logger.info(f"\n{'='*60}")
-    logger.info("📋 ETL SUMMARY")
-    logger.info(f"{'='*60}")
+    logger.info(f"\n{'='*70}")
+    logger.info("ETL SUMMARY")
+    logger.info(f"{'='*70}")
     
     for step_name, step_success in steps:
         status = "✓" if step_success else "✗"
         logger.info(f"  {status} {step_name}")
     
-    logger.info(f"\n⏱️  Total Duration: {duration.total_seconds():.1f} seconds")
+    logger.info(f"\nTotal Duration: {duration.total_seconds():.1f} seconds")
+    logger.info(f"Duration (min):  {duration.total_seconds()/60:.2f} minutes")
     
     all_success = all(success for _, success in steps)
     
     if all_success:
-        logger.info("""
+        logger.info(f"""
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║              ✅ ETL COMPLETED SUCCESSFULLY! ✅           ║
+    ║              ETL COMPLETED SUCCESSFULLY                   ║
     ║                                                           ║
-    ║     Your data warehouse is ready for analysis! 🎉        ║
+    ║     Your data warehouse is ready for analysis             ║
     ║                                                           ║
     ║  Next steps:                                              ║
-    ║  1. Run queries: python scripts/sample_queries.py         ║
-    ║  2. Generate viz: python visualization/generate.py        ║
+    ║  • Generate visualizations:                               ║
+    ║    python visualization/generate_dashboard.py             ║
+    ║                                                           ║
+    ║  Dataset: {DATASET_NAME:<44} ║
+    ║  Period:  {DATE_RANGE_STR:<44} ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
         """)
@@ -272,7 +222,7 @@ async def main():
         logger.error("""
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║                ❌ ETL FAILED ❌                          ║
+    ║                ETL FAILED                                 ║
     ║                                                           ║
     ║  Check the logs above for error details.                  ║
     ║                                                           ║
@@ -280,4 +230,4 @@ async def main():
         """)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

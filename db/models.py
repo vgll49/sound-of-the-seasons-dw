@@ -1,6 +1,6 @@
 # db/models.py
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, Boolean,
+    Column, Integer, String, Float, Boolean,
     Date, ForeignKey
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -12,28 +12,23 @@ class DimTime(Base):
 
     date_id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False, unique=True)
-
-    day = Column(Integer)
-    month = Column(Integer)
-    year = Column(Integer)
-    weekday = Column(Integer)
-    week_of_year = Column(Integer)
-    season = Column(String)
-    is_weekend = Column(Boolean)
+    month = Column(Integer, nullable=False)
+    season = Column(String, nullable=False)
 
 class DimTrack(Base):
     __tablename__ = "dim_track"
 
-    track_id = Column(String, primary_key=True)
+    track_id = Column(String, primary_key=True)  # Soundcharts song_uuid
     track_name = Column(String, nullable=False)
     artist_names = Column(String)
-    genre = Column(String)
-
-    duration_ms = Column(Integer)
-    explicit_flag = Column(Boolean)
-    popularity = Column(Integer)  # 0-100
-    release_date = Column(String)  # YYYY oder YYYY-MM-DD
     
+    # Metadata        
+    genre = Column(String)            
+    duration_ms = Column(Integer)      # duration in ms
+    release_date = Column(String)
+    language_code = Column(String)     
+    image_url = Column(String)         
+
     # Audio Features (alle von Spotify)
     danceability = Column(Float)       # 0.0-1.0
     energy = Column(Float)             # 0.0-1.0
@@ -53,25 +48,11 @@ class DimWeather(Base):
 
     weather_id = Column(Integer, primary_key=True)
     date_id = Column(Integer, ForeignKey("dim_time.date_id"), nullable=False)
-
-    bundesland = Column(String, nullable=False)
-
-    temperature_avg = Column(Float)
-    precipitation_mm = Column(Float)
-    wind_speed_kmh = Column(Float)
-    sunshine_hours = Column(Float)
-
-    time = relationship("DimTime")
-
-class DimHoliday(Base):
-    __tablename__ = "dim_holiday"
-
-    holiday_id = Column(Integer, primary_key=True)
-    date_id = Column(Integer, ForeignKey("dim_time.date_id"), nullable=False)
-
-    bundesland = Column(String, nullable=False)
-    holiday_name = Column(String)
-    is_public_holiday = Column(Boolean)
+    
+    temperature_avg = Column(Float)     # Averaged across 16 locations
+    precipitation_mm = Column(Float)    # Averaged across 16 locations
+    wind_speed_kmh = Column(Float)      # Averaged across 16 locations
+    sunshine_hours = Column(Float)      # Averaged across 16 locations
 
     time = relationship("DimTime")
 
@@ -83,14 +64,11 @@ class FactTrackChart(Base):
     track_id = Column(String, ForeignKey("dim_track.track_id"), nullable=False)
     date_id = Column(Integer, ForeignKey("dim_time.date_id"), nullable=False)
     weather_id = Column(Integer, ForeignKey("dim_weather.weather_id"))
-    holiday_id = Column(Integer, ForeignKey("dim_holiday.holiday_id"))
 
-    country = Column(String, nullable=False) 
-
+    country = Column(String, nullable=False)
     stream_count = Column(Integer)
     chart_position = Column(Integer)
 
     track = relationship("DimTrack")
     time = relationship("DimTime")
     weather = relationship("DimWeather")
-    holiday = relationship("DimHoliday")

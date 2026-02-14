@@ -1,1 +1,0 @@
-# um db weiter zu füllen, page zu deployen

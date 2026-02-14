@@ -21,7 +21,6 @@ def generate_dashboard(country: str = 'de'):
     seasonal_df = stats.get_seasonal_streaming_trends(country=country)
     weather_df = stats.get_weather_impact(country=country)
     mood_df = stats.get_mood_by_weather(country=country)
-    holiday_df = stats.get_holiday_effect(country=country)
     top_tracks_df = stats.get_top_tracks_by_season(country=country, limit=5)
     acoustic_df = stats.get_acoustic_vs_electronic(country=country)
     key_df = stats.get_key_distribution(country=country)
@@ -45,7 +44,6 @@ def generate_dashboard(country: str = 'de'):
         'seasonal': charts.create_seasonal_chart(seasonal_df),
         'weather': charts.create_weather_chart(weather_df),
         'mood': charts.create_mood_radar(mood_df),
-        'holiday': charts.create_holiday_chart(holiday_df),
         'acoustic': charts.create_acoustic_chart(acoustic_df),
         'key_distribution': charts.create_key_distribution_chart(key_df),
         'top_tracks': charts.create_top_tracks_table(top_tracks_df),

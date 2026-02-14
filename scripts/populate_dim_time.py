@@ -1,20 +1,21 @@
-# scripts/populate_dim_time.py
 from sqlalchemy.orm import Session
 from db.models import DimTime
 from db.database import SessionLocal
-from datetime import datetime, timedelta
+from datetime import timedelta
+from config import START_DATE, END_DATE
 
 def populate_dim_time():
+    """Populate DimTime dimension"""
+    
+    print(f"Populating DimTime: {START_DATE} → {END_DATE}")
+    
     db: Session = SessionLocal()
     
-    start_date = datetime(2020, 1, 1).date()
-    end_date = datetime(2022, 12, 31).date()
-    
-    current = start_date
+    current = START_DATE
     records = []
     
-    while current <= end_date:
-        # Saison berechnen
+    while current <= END_DATE:
+        # Season
         month = current.month
         if month in [12, 1, 2]:
             season = "Winter"
@@ -27,13 +28,8 @@ def populate_dim_time():
         
         record = DimTime(
             date=current,
-            day=current.day,
             month=current.month,
-            year=current.year,
-            weekday=current.weekday(),  # 0=Monday, 6=Sunday
-            week_of_year=current.isocalendar()[1],
-            season=season,
-            is_weekend=(current.weekday() >= 5)  # Sa/So
+            season=season
         )
         records.append(record)
         current += timedelta(days=1)
@@ -41,13 +37,14 @@ def populate_dim_time():
     try:
         db.bulk_save_objects(records)
         db.commit()
-        print(f"✓ Inserted {len(records)} dates for start date: {start_date} to end date: {end_date}")
+        print(f"Inserted {len(records)} dates ({START_DATE} → {END_DATE})")
+        
     except Exception as e:
         db.rollback()
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
+        raise
     finally:
         db.close()
 
 if __name__ == "__main__":
     populate_dim_time()
-
