@@ -1,28 +1,35 @@
-name: Weekly Data Update
+name: Weekly Data Update & Visualization
 
 on:
   schedule:
-    # Sonntag 00:00 UTC (nach Chart-Update)
-    - cron: '0 0 * * 0'
-  workflow_dispatch:  # manual trigger
+    - cron: '0 1 * * 0'  # Sonntag 01:00 UTC
+  workflow_dispatch:
 
 jobs:
-  update-data:
+  etl-and-visualize:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      
+      - name: Install package
+        run: |
+          pip install -e .
       
       - name: Run incremental ETL
         env:
@@ -31,10 +38,22 @@ jobs:
         run: |
           python scripts/incremental_etl.py
       
-      - name: Commit and push changes
+      - name: Generate visualizations
+        run: |
+          python visualization/generate_dashboard.py
+      
+      - name: Commit database changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/raw/*.csv sound_of_seasons.db
-          git diff --staged --quiet || git commit -m "chore: weekly data update $(date +%Y-%m-%d)"
+          git add sound_of_seasons.db
+          git diff --staged --quiet || git commit -m "chore: update data $(date +%Y-%m-%d)"
           git push
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./visualization/output
+          publish_branch: gh-pages
+          force_orphan: true
