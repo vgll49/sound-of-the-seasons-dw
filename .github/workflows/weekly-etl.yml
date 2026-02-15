@@ -27,18 +27,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Install package
-        run: |
-          pip install -e .
-      
       - name: Run incremental ETL
         env:
+          PYTHONPATH: ${{ github.workspace }}
           SOUNDCHARTS_APP_ID: ${{ secrets.SOUNDCHARTS_APP_ID }}
           SOUNDCHARTS_API_KEY: ${{ secrets.SOUNDCHARTS_API_KEY }}
         run: |
           python scripts/incremental_etl.py
       
       - name: Generate visualizations
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python visualization/generate_dashboard.py
       
