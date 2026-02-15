@@ -175,19 +175,23 @@ class DataLoader:
             db.close()
     
     def load_charts(self, chart_items: List[Dict], date_obj, create_tracks: bool = True):
-        """Load chart data from API items"""
+        """Load chart data and return IDs of newly created tracks"""
         db = SessionLocal()
         
         try:
+            logger.info(f"Loading {len(chart_items)} chart items for {date_obj}")
+            
             date_lookup = {d.date: d.date_id for d in db.query(DimTime.date_id, DimTime.date).all()}
             weather_lookup = {w.date_id: w.weather_id for w in db.query(DimWeather.date_id, DimWeather.weather_id).all()}
             
             date_id = date_lookup.get(date_obj)
             if not date_id:
-                logger.warning(f"No date_id for {date_obj}")
-                return 0
+                logger.error(f"No date_id for {date_obj}")
+                return 0, [] 
             
             track_ids = {item.get('song', {}).get('uuid') for item in chart_items if item.get('song', {}).get('uuid')}
+            
+            new_track_ids = []  
             
             if create_tracks and track_ids:
                 existing_tracks = {t.track_id for t in db.query(DimTrack.track_id).filter(
@@ -206,6 +210,7 @@ class DataLoader:
                                 track_name=item.get('song', {}).get('name', 'Unknown'),
                                 artist_names=item.get('song', {}).get('creditName', 'Unknown')
                             ))
+                            new_track_ids.append(song_uuid)  # ← Collect new IDs
                     
                     db.bulk_save_objects(track_records)
                     db.commit()
@@ -231,13 +236,13 @@ class DataLoader:
                 db.bulk_save_objects(fact_records)
                 db.commit()
                 logger.info(f"Inserted {len(fact_records)} facts for {date_obj}")
-                return len(fact_records)
+                return len(fact_records), new_track_ids  
             
-            return 0
+            return 0, []
             
         except Exception as e:
             db.rollback()
-            logger.error(f"Error loading charts: {e}")
+            logger.error(f"Error: {e}")
             raise
         finally:
             db.close()

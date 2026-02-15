@@ -41,18 +41,10 @@ jobs:
         run: |
           python visualization/generate_dashboard.py
       
-      - name: Commit database changes
+      - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add sound_of_seasons.db
-          git diff --staged --quiet || git commit -m "chore: update data $(date +%Y-%m-%d)"
+          git add sound_of_seasons.db docs/
+          git diff --staged --quiet || git commit -m "chore: update data & dashboard $(date +%Y-%m-%d)"
           git push
-      
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./visualization/output
-          publish_branch: gh-pages
-          force_orphan: true

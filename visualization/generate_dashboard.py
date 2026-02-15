@@ -88,7 +88,6 @@ def generate_dashboard(country: str = 'de'):
     logger.info("\n🚀 Next steps:")
     logger.info("   1. Test locally: python -m http.server --directory docs 8000")
     logger.info("   2. Open: http://localhost:8000")
-    logger.info("   3. Push to GitHub for automatic deployment!")
 
 if __name__ == "__main__":
     generate_dashboard()

@@ -1,12 +1,10 @@
-"""
-Incremental ETL - Fetch only missing/new data
-"""
 import asyncio
 import aiohttp
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, date
 
+from scripts.populate_dim_time import populate_dim_time
 from services.soundcharts_service import SoundchartsService
 from services.data_loader import DataLoader
 from services.weather_service import WeatherService
@@ -20,147 +18,196 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class IncrementalETL:
-    """Identifies missing data from DB"""
+def get_credentials():
+    """Get API credentials from environment"""
+    app_id = os.getenv('SOUNDCHARTS_APP_ID')
+    api_key = os.getenv('SOUNDCHARTS_API_KEY')
     
-    def __init__(self):
-        self.app_id = os.getenv('SOUNDCHARTS_APP_ID')
-        self.api_key = os.getenv('SOUNDCHARTS_API_KEY')
-        
-        if not self.app_id or not self.api_key:
-            raise ValueError("Missing SOUNDCHARTS_APP_ID or SOUNDCHARTS_API_KEY")
+    if not app_id or not api_key:
+        raise ValueError("Missing SOUNDCHARTS_APP_ID or SOUNDCHARTS_API_KEY")
     
-    def get_missing_chart_dates(self):
-        """Find chart dates missing from FactTrackChart"""
-        db = SessionLocal()
-        
-        all_dates = {d.date for d in db.query(DimTime.date).all()}
-        sundays = sorted([d for d in all_dates if d.weekday() == 6])
-        
-        fact_dates = {d.date for d in db.query(DimTime.date, DimTime.date_id).join(
-            FactTrackChart, DimTime.date_id == FactTrackChart.date_id
-        ).distinct().all()}
-        
-        db.close()
-        
-        missing = sorted(list(set(sundays) - fact_dates))
-        logger.info(f"Missing chart dates: {len(missing)}")
-        
-        return missing
-    
-    def get_missing_features(self):
-        """Find tracks without audio features"""
-        db = SessionLocal()
-        
-        missing_uuids = [
-            t.track_id for t in db.query(DimTrack.track_id).filter(
-                DimTrack.danceability.is_(None)
-            ).all()
-        ]
-        
-        db.close()
-        
-        logger.info(f"Missing features: {len(missing_uuids)}")
-        return missing_uuids[:200]  # Limit per run
-    
-    def get_missing_weather_dates(self):
-        """Find dates without weather"""
-        db = SessionLocal()
-        
-        all_dates = {d.date for d in db.query(DimTime.date).all()}
-        
-        weather_date_ids = {w.date_id for w in db.query(DimWeather.date_id).all()}
-        dates_with_weather = {d.date for d in db.query(DimTime.date, DimTime.date_id).filter(
-            DimTime.date_id.in_(weather_date_ids)
-        ).all()}
-        
-        db.close()
-        
-        missing = sorted(list(all_dates - dates_with_weather))
-        logger.info(f"Missing weather: {len(missing)}")
-        
-        return missing
+    return app_id, api_key
 
 
-async def fetch_and_load_charts(etl: IncrementalETL, missing_dates):
-    """Fetch charts and load using DataLoader"""
+def extend_dim_time_to_today():
+    """Extend DimTime from latest date to today if needed"""
+    db = SessionLocal()
+    
+    try:
+        latest = db.query(DimTime.date).order_by(DimTime.date.desc()).first()
+        
+        if not latest:
+            logger.error("DimTime is empty! Run full ETL first.")
+            return
+        
+        latest_date = latest.date
+        today = date.today()
+        
+        logger.info(f"DimTime latest: {latest_date}, Today: {today}")
+        
+        if latest_date >= today:
+            logger.info("DimTime is up to date")
+            return
+        
+        logger.info("Extending DimTime to today...")
+        
+    finally:
+        db.close()
+    
+    populate_dim_time(
+        start_date=latest_date + timedelta(days=1),
+        end_date=today
+    )
+
+def get_missing_chart_dates():
+    """Find new Sundays after the latest chart in DB"""
+    db = SessionLocal()
+    
+    latest_fact_date = db.query(DimTime.date).join(
+        FactTrackChart, DimTime.date_id == FactTrackChart.date_id
+    ).order_by(DimTime.date.desc()).first()
+    
+    if not latest_fact_date:
+        logger.warning("No facts in DB - run full ETL first!")
+        db.close()
+        return []
+    
+    latest_date = latest_fact_date.date
+    logger.info(f"Latest date with facts: {latest_date}")
+    
+    all_dates = db.query(DimTime.date).filter(
+        DimTime.date > latest_date
+    ).all()
+    
+    sundays = sorted([d.date for d in all_dates if d.date.weekday() == 6])
+    
+    db.close()
+    
+    logger.info(f"New Sundays to fetch: {len(sundays)}")
+    if sundays:
+        logger.info(f"  Range: {sundays[0]} to {sundays[-1]}")
+    
+    return sundays
+
+
+def get_missing_features():
+    """Find tracks without audio features"""
+    db = SessionLocal()
+    
+    missing = [
+        t.track_id for t in db.query(DimTrack.track_id).filter(
+            DimTrack.danceability.is_(None)
+        ).all()
+    ]
+    
+    db.close()
+    
+    logger.info(f"Tracks missing features: {len(missing)}")
+    return missing[:200]
+
+
+def get_missing_weather_dates():
+    """Find new dates after the latest weather in DB"""
+    db = SessionLocal()
+    
+    latest = db.query(DimTime.date).join(
+        DimWeather, DimTime.date_id == DimWeather.date_id
+    ).order_by(DimTime.date.desc()).first()
+    
+    if not latest:
+        logger.warning("No weather in DB - run full ETL first!")
+        db.close()
+        return []
+    
+    latest_date = latest.date
+    logger.info(f"Latest date with weather: {latest_date}")
+    
+    missing = db.query(DimTime.date).filter(
+        DimTime.date > latest_date
+    ).all()
+    
+    db.close()
+    
+    result = sorted([d.date for d in missing])
+    logger.info(f"New dates for weather: {len(result)}")
+    
+    return result
+
+async def fetch_and_load_charts(app_id, api_key, missing_dates):
+    """Fetch charts for missing Sundays and return NEW track IDs only"""
     if not missing_dates:
         logger.info("No charts to fetch")
-        return
+        return []
     
     logger.info(f"Fetching {len(missing_dates)} charts...")
     
     loader = DataLoader()
+    all_new_track_ids = []  # ← Only NEW tracks
+    total = 0
     
     async with aiohttp.ClientSession() as session:
-        service = SoundchartsService(session, etl.app_id, etl.api_key)
+        service = SoundchartsService(session, app_id, api_key)
         
-        # Get available API dates
-        all_api_dates = await service.fetch_available_chart_dates('top-songs-22')
-        
-        # Map to missing dates
-        date_map = {}
-        for api_date_str in all_api_dates:
-            dt = datetime.fromisoformat(api_date_str.replace('+00:00', ''))
-            date_obj = dt.date()
-            if date_obj in missing_dates:
-                date_map[date_obj] = api_date_str
-        
-        # Fetch and load each
-        total_inserted = 0
-        for date_obj, api_str in date_map.items():
-            logger.info(f"  Fetching {date_obj}...")
-            items = await service.fetch_chart_for_date('top-songs-22', api_str, top_n=200)
+        for date_obj in sorted(missing_dates):
+            api_date_str = f"{date_obj.isoformat()}T12:00:00+00:00"
+            
+            logger.info(f"  {date_obj}...")
+            items = await service.fetch_chart_for_date('top-songs-22', api_date_str, top_n=200)
             
             if items:
-                inserted = loader.load_charts(items, date_obj, create_tracks=True)
-                total_inserted += inserted
+                inserted, new_ids = loader.load_charts(items, date_obj, create_tracks=True)  # ← Get new IDs!
+                
+                all_new_track_ids.extend(new_ids)  # ← Only new ones
+                total += inserted
+                logger.info(f"    Inserted {inserted} facts, {len(new_ids)} new tracks")
+            else:
+                logger.warning(f"    No data")
             
             await asyncio.sleep(0.5)
-        
-        logger.info(f"Total facts inserted: {total_inserted}")
+    
+    logger.info(f"Total: {total} facts, {len(all_new_track_ids)} NEW tracks need features")
+    return all_new_track_ids
 
 
-async def fetch_and_load_features(etl: IncrementalETL, missing_uuids):
-    """Fetch features and update using DataLoader"""
-    if not missing_uuids:
+async def fetch_and_load_features(app_id, api_key, track_ids):
+    """Fetch audio features for track IDs"""
+    if not track_ids:
         logger.info("No features to fetch")
         return
     
-    logger.info(f"Fetching {len(missing_uuids)} features...")
+    logger.info(f"Fetching {len(track_ids)} features...")
     
     loader = DataLoader()
     
     async with aiohttp.ClientSession() as session:
-        service = SoundchartsService(session, etl.app_id, etl.api_key)
-        df_features = await service.fetch_audio_features(missing_uuids)
+        service = SoundchartsService(session, app_id, api_key)
+        df = await service.fetch_audio_features(track_ids)
     
-    if len(df_features) > 0:
-        loader.update_track_features(df_features)
+    if len(df) > 0:
+        loader.update_track_features(df)
 
 
-async def fetch_missing_weather(missing_dates):
-    """Fetch weather using DataLoader"""
+async def fetch_and_load_weather(missing_dates):
+    """Fetch weather for missing dates"""
     if not missing_dates:
         logger.info("No weather to fetch")
         return
     
     logger.info(f"Fetching weather for {len(missing_dates)} dates...")
     
-    # Group into contiguous ranges
+    # Group into ranges
     ranges = []
-    if missing_dates:
-        start = missing_dates[0]
-        end = missing_dates[0]
-        
-        for date in missing_dates[1:]:
-            if (date - end).days == 1:
-                end = date
-            else:
-                ranges.append((start, end))
-                start = date
-                end = date
-        ranges.append((start, end))
+    start = missing_dates[0]
+    end = missing_dates[0]
+    
+    for d in missing_dates[1:]:
+        if (d - end).days == 1:
+            end = d
+        else:
+            ranges.append((start, end))
+            start = d
+            end = d
+    ranges.append((start, end))
     
     logger.info(f"Consolidated into {len(ranges)} ranges")
     
@@ -168,40 +215,59 @@ async def fetch_missing_weather(missing_dates):
     
     async with aiohttp.ClientSession() as session:
         for start, end in ranges:
-            logger.info(f"  Fetching {start} to {end}")
+            logger.info(f"  {start} to {end}")
             
-            weather_service = WeatherService(
+            service = WeatherService(
                 session=session,
                 start_date=start.isoformat(),
                 end_date=end.isoformat()
             )
             
-            await loader.load_weather(weather_service)
+            await loader.load_weather(service)
             await asyncio.sleep(5)
 
-
 async def main():
-    """Main incremental ETL orchestration"""
+    """Main incremental ETL"""
     logger.info("="*70)
     logger.info("INCREMENTAL ETL")
     logger.info("="*70)
     logger.info(f"Timestamp: {datetime.now()}")
     
-    etl = IncrementalETL()
+    # Credentials
+    app_id, api_key = get_credentials()
+    
+    # Extend DimTime
+    logger.info("\n--- Extending DimTime ---")
+    extend_dim_time_to_today()
     
     # Identify missing
-    missing_weather = etl.get_missing_weather_dates()
-    missing_charts = etl.get_missing_chart_dates()
-    missing_features = etl.get_missing_features()
+    logger.info("\n--- Checking for new data ---")
+    missing_weather = get_missing_weather_dates()
+    missing_charts = get_missing_chart_dates()
+    missing_features_old = get_missing_features()
     
-    # Fetch and load (uses DataLoader service)
-    await fetch_missing_weather(missing_weather)
-    await fetch_and_load_charts(etl, missing_charts)
-    await fetch_and_load_features(etl, missing_features)
+    if not any([missing_weather, missing_charts, missing_features_old]):
+        logger.info("\n✅ Database is up to date!")
+        return
     
-    logger.info("="*70)
+    # Fetch
+    logger.info("\n--- Fetching new data ---")
+    
+    await fetch_and_load_weather(missing_weather)
+    new_track_ids = await fetch_and_load_charts(app_id, api_key, missing_charts)
+    
+    if new_track_ids:
+        logger.info(f"\n--- Features for {len(new_track_ids)} new tracks ---")
+        await fetch_and_load_features(app_id, api_key, new_track_ids)
+    
+    if missing_features_old:
+        logger.info(f"\n--- Features for {len(missing_features_old)} old tracks ---")
+        await fetch_and_load_features(app_id, api_key, missing_features_old)
+    
+    logger.info("\n" + "="*70)
     logger.info("INCREMENTAL ETL COMPLETE")
     logger.info("="*70)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
