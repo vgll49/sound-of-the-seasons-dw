@@ -46,5 +46,5 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add sound_of_seasons.db docs/
-          git diff --staged --quiet || git commit -m "chore: update data & dashboard $(date +%Y-%m-%d)"
+          git diff --staged --quiet || git commit -m "chore: weekly update $(date +%Y-%m-%d)"
           git push
