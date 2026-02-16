@@ -1,3 +1,30 @@
-# sound-of-the-seasons-dw
+# Sound of the Seasons - Data Warehouse
 
-<img width="1536" height="1024" alt="SoundOfTheSeasons_16_9" src="https://github.com/user-attachments/assets/b2dc2ac5-90fd-4c5c-8271-302c8d90f7c8" />
+Analyse des Einflusses von Wetter und Jahreszeiten auf Spotify Charts (Deutschland, 2020-2026). Erneuert sich Wöchentlich über Git Action. 
+
+---
+
+## Quick Start
+
+### 1. ETL ausführen
+```bash
+python etl/run_etl.py
+```
+**Config:** `etl/config.py` (API Keys, Pfade, Einstellungen)
+
+### 2. Dashboard generieren
+```bash
+python visualization/generate_dashboard.py
+```
+**Output:** `docs/index.html`
+
+### 3. Lokal testen
+```bash
+python -m http.server --directory docs 8000
+```
+Öffne: http://localhost:8000
+
+---
+
+**Queries:** Alle SQL-Abfragen in `visualization/stats.py`
+

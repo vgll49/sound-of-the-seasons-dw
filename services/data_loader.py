@@ -1,4 +1,3 @@
-"""Database loading service"""
 from typing import Dict, List
 import json
 import pandas as pd

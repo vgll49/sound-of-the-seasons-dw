@@ -1,6 +1,713 @@
-# visualization/charts.py
 import plotly.graph_objects as go
 import plotly.express as px
+import pandas as pd
+
+def create_current_top_3(df):
+    """ Top 3 with covers"""
+    if df.empty:
+        return "<p>Keine aktuellen Daten verfügbar</p>"
+    
+    html = '<div class="current-top-3">'
+    
+    for idx, row in df.iterrows():
+        html += f'''
+        <div class="top-track-card">
+            <div class="rank-badge">#{int(row['position'])}</div>
+            <img src="{row['image_url']}" alt="{row['track_name']}" class="track-cover">
+            <div class="track-details">
+                <h3 class="track-title">{row['track_name']}</h3>
+                <p class="track-artist">{row['artist_names']}</p>
+                <div class="track-stats">
+                    <span class="stat-badge">{int(row['streams']/1000):.0f}K Streams</span>
+                </div>
+            </div>
+        </div>
+        '''
+    
+    html += '</div>'
+    return html
+
+
+def create_weekly_changes_widget(data):
+    """Widget: Wöchentliche Audio Feature + Wetter Änderungen"""
+    if not data or 'features' not in data:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    def get_arrow_and_color(change, threshold=0.005):
+        """Return arrow emoji and color"""
+        if abs(change) < threshold:
+            return "→", "#6b7280", "gleich"
+        elif change > 0:
+            return "↑", "#10b981", "gestiegen"
+        else:
+            return "↓", "#ef4444", "gesunken"
+    
+    features_config = {
+        'valence': {'name': 'Positivität', 'emoji': '😊', 'format': '{:.2f}'},
+        'danceability': {'name': 'Tanzbarkeit', 'emoji': '💃', 'format': '{:.2f}'},
+        'energy': {'name': 'Energie', 'emoji': '⚡', 'format': '{:.2f}'},
+        'tempo': {'name': 'Tempo', 'emoji': '🎵', 'format': '{:.0f} BPM'},
+        'acousticness': {'name': 'Akustisch', 'emoji': '🎸', 'format': '{:.2f}'}
+    }
+    
+    weather_config = {
+        'temperature': {'name': 'Temperatur', 'emoji': '🌡️', 'format': '{:.1f}°C', 'threshold': 0.5},
+        'sunshine': {'name': 'Sonnenstunden', 'emoji': '☀️', 'format': '{:.1f}h', 'threshold': 0.5},
+        'precipitation': {'name': 'Niederschlag', 'emoji': '💧', 'format': '{:.1f}mm', 'threshold': 0.5}
+    }
+    
+    chart_date = data['chart_date'].strftime('%d.%m.%Y')
+    prev_chart_date = data['previous_chart_date'].strftime('%d.%m.%Y')
+    
+    html = f'''
+    <div class="weekly-changes-widget">
+        <div class="widget-header">
+            <h3>📈 Charts & Wetter im Vergleich</h3>
+            <p class="comparison-dates">
+                <span class="current-week">Charts {chart_date}</span>
+                <span class="vs">vs</span>
+                <span class="previous-week">{prev_chart_date}</span>
+            </p>
+            <p class="sample-info">
+                {data['unique_songs']} unique Songs analysiert
+            </p>
+            <p class="weather-period-info">
+                Wetter: {data['weather_period_current']} vs {data['weather_period_previous']}
+            </p>
+        </div>
+        
+        <!-- Audio Features -->
+        <div class="section-label">🎵 Audio Features</div>
+        <div class="changes-grid">
+    '''
+    
+    # Audio Features
+    for key, config in features_config.items():
+        feat = data['features'][key]
+        arrow, color, trend_text = get_arrow_and_color(feat['change'])
+        
+        current_val = config['format'].format(feat['current'])
+        change_val = abs(feat['change'])
+        change_pct = abs(feat['change_pct'])
+        
+        html += f'''
+        <div class="change-card">
+            <div class="feature-icon">{config['emoji']}</div>
+            <div class="feature-name">{config['name']}</div>
+            <div class="current-value">{current_val}</div>
+            <div class="change-indicator" style="color: {color};">
+                <span class="arrow">{arrow}</span>
+                <span class="change-text">{trend_text}</span>
+            </div>
+            <div class="change-details">
+                <span class="change-abs">{change_val:.3f}</span>
+                <span class="change-pct">({change_pct:.1f}%)</span>
+            </div>
+        </div>
+        '''
+    
+    html += '''
+        </div>
+        
+        <!-- Weather -->
+        <div class="section-label">🌤️ Wetter (Ø 7 Tage)</div>
+        <div class="changes-grid weather-grid">
+    '''
+    
+    # Weather
+    for key, config in weather_config.items():
+        weather = data['weather'][key]
+        arrow, color, trend_text = get_arrow_and_color(
+            weather['change'], 
+            threshold=config['threshold']
+        )
+        
+        current_val = config['format'].format(weather['current'])
+        change_val = abs(weather['change'])
+        
+        html += f'''
+        <div class="change-card weather-card">
+            <div class="feature-icon">{config['emoji']}</div>
+            <div class="feature-name">{config['name']}</div>
+            <div class="current-value">{current_val}</div>
+            <div class="change-indicator" style="color: {color};">
+                <span class="arrow">{arrow}</span>
+                <span class="change-text">{trend_text}</span>
+            </div>
+            <div class="change-details">
+                <span class="change-abs">{change_val:.1f}</span>
+            </div>
+        </div>
+        '''
+    
+    html += '''
+        </div>
+    </div>
+    '''
+    
+    return html
+
+def create_audio_features_timeline(df):
+    """Line Chart: Audio Features über die Jahreszeiten"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    # Season order and labels
+    season_order = ['Frühling', 'Sommer', 'Herbst', 'Winter']
+    season_emojis = {
+        'Frühling': '🌸',
+        'Sommer': '☀️', 
+        'Herbst': '🍂',
+        'Winter': '❄️'
+    }
+    
+    # Ensure correct order
+    df['season_order'] = df['season'].map({s: i for i, s in enumerate(season_order)})
+    df = df.sort_values('season_order')
+    
+    # Create labels with emojis
+    x_labels = [f"{season_emojis[s]} {s}" for s in df['season']]
+    
+    # Create hover text with both metrics
+    hover_template = '<b>%{x}</b><br>%{fullData.name}: %{y:.3f}<br>' + \
+                    'Chart Entries: %{customdata[0]:,}<br>' + \
+                    'Tracks: %{customdata[1]:,}<extra></extra>'
+    
+    customdata = [[row['chart_entries'], row['unique_tracks']] for _, row in df.iterrows()]
+    
+    fig = go.Figure()
+    
+    # Danceability
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['danceability'],
+        name='Danceability',
+        mode='lines+markers',
+        line=dict(color='#f59e0b', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Energy
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['energy'],
+        name='Energy',
+        mode='lines+markers',
+        line=dict(color='#ef4444', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Instrumentalness
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['instrumentalness'],
+        name='Instrumentalness',
+        mode='lines+markers',
+        line=dict(color='#8b5cf6', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Valence
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['valence'],
+        name='Valence',
+        mode='lines+markers',
+        line=dict(color='#10b981', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Acousticness
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['acousticness'],
+        name='Acousticness',
+        mode='lines+markers',
+        line=dict(color='#06b6d4', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Season backgrounds
+    season_colors = {
+        'Frühling': 'rgba(16, 185, 129, 0.08)',
+        'Sommer': 'rgba(245, 158, 11, 0.08)',
+        'Herbst': 'rgba(239, 68, 68, 0.08)',
+        'Winter': 'rgba(59, 130, 246, 0.08)'
+    }
+    
+    # Add season background rectangles
+    shapes = []
+    for i, season in enumerate(df['season']):
+        shapes.append(dict(
+            type="rect",
+            xref="x",
+            yref="paper",
+            x0=i - 0.4,
+            x1=i + 0.4,
+            y0=0,
+            y1=1,
+            fillcolor=season_colors.get(season, 'rgba(200,200,200,0.1)'),
+            layer="below",
+            line_width=0
+        ))
+    
+    total_entries = int(df['chart_entries'].sum())
+    total_unique = int(df['unique_tracks'].sum())
+    
+    fig.update_layout(
+        title=f'Audio Features über die Jahreszeiten<br><sub>{total_entries:,} Chart-Einträge · {total_unique:,} Tracks</sub>',
+        xaxis=dict(
+            title='Jahreszeit'
+        ),
+        yaxis=dict(
+            title='Wert (0-1)',
+            range=[0, 1]
+        ),
+        height=450,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, system-ui, sans-serif'),
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        shapes=shapes
+    )
+    
+    return fig.to_html(include_plotlyjs=False, div_id='audio-features-timeline', config={'displayModeBar': False})
+
+
+def create_tempo_timeline(df):
+    """Line Chart: Tempo (BPM) über die Jahreszeiten"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    # Season order and labels
+    season_order = ['Frühling', 'Sommer', 'Herbst', 'Winter']
+    season_emojis = {
+        'Frühling': '🌸',
+        'Sommer': '☀️',
+        'Herbst': '🍂',
+        'Winter': '❄️'
+    }
+    
+    # Ensure correct order
+    df['season_order'] = df['season'].map({s: i for i, s in enumerate(season_order)})
+    df = df.sort_values('season_order')
+    
+    # Create labels with emojis
+    x_labels = [f"{season_emojis[s]} {s}" for s in df['season']]
+    
+    # Season colors for markers
+    season_colors_map = {
+        'Winter': '#3b82f6',
+        'Frühling': '#10b981',
+        'Sommer': '#f59e0b',
+        'Herbst': '#ef4444'
+    }
+    
+    marker_colors = [season_colors_map.get(s, '#6b7280') for s in df['season']]
+    
+    # Create hover text
+    hover_text = []
+    for _, row in df.iterrows():
+        hover_text.append(
+            f"<b>{season_emojis[row['season']]} {row['season']}</b><br>" +
+            f"Tempo: {row['tempo']:.1f} BPM<br>" +
+            f"Chart Entries: {int(row['chart_entries']):,}<br>" +
+            f"Tracks: {int(row['unique_tracks']):,}"
+        )
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['tempo'],
+        name='Tempo',
+        mode='lines+markers',
+        line=dict(color='#8b5cf6', width=5),
+        marker=dict(
+            size=16,
+            color=marker_colors,
+            line=dict(color='white', width=2)
+        ),
+        fill='tozeroy',
+        fillcolor='rgba(139, 92, 246, 0.1)',
+        hovertext=hover_text,
+        hoverinfo='text'
+    ))
+    
+    total_entries = int(df['chart_entries'].sum())
+    total_unique = int(df['unique_tracks'].sum())
+    
+    fig.update_layout(
+        title=f'Tempo (BPM) über die Jahreszeiten<br><sub>{total_entries:,} Chart-Einträge · {total_unique:,} Tracks</sub>',
+        xaxis=dict(
+            title='Jahreszeit'
+        ),
+        yaxis=dict(
+            title='Tempo (BPM)',
+            range=[df['tempo'].min() * 0.95, df['tempo'].max() * 1.05]
+        ),
+        height=400,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, system-ui, sans-serif'),
+        showlegend=False
+    )
+    
+    return fig.to_html(include_plotlyjs=False, div_id='tempo-timeline', config={'displayModeBar': False})
+
+
+def create_loudness_timeline(df):
+    """Bar Chart: Loudness (dB) über die Jahreszeiten - SEPARATER CHART"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    # Season order and labels
+    season_order = ['Frühling', 'Sommer', 'Herbst', 'Winter']
+    season_emojis = {
+        'Frühling': '🌸',
+        'Sommer': '☀️',
+        'Herbst': '🍂',
+        'Winter': '❄️'
+    }
+    
+    # Ensure correct order
+    df['season_order'] = df['season'].map({s: i for i, s in enumerate(season_order)})
+    df = df.sort_values('season_order')
+    
+    # Create labels with emojis
+    x_labels = [f"{season_emojis[s]} {s}" for s in df['season']]
+    
+    # Season colors
+    season_colors_map = {
+        'Winter': '#3b82f6',
+        'Frühling': '#10b981',
+        'Sommer': '#f59e0b',
+        'Herbst': '#ef4444'
+    }
+    
+    bar_colors = [season_colors_map.get(s, '#6b7280') for s in df['season']]
+    
+    # Create hover text
+    hover_text = []
+    for _, row in df.iterrows():
+        hover_text.append(
+            f"<b>{season_emojis[row['season']]} {row['season']}</b><br>" +
+            f"Loudness: {row['loudness']:.1f} dB<br>" +
+            f"Chart Entries: {int(row['chart_entries']):,}<br>" +
+            f"Tracks: {int(row['unique_tracks']):,}"
+        )
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=x_labels,
+        y=df['loudness'],
+        marker=dict(
+            color=bar_colors,
+            line=dict(color='white', width=2)
+        ),
+        text=df['loudness'].apply(lambda x: f'{x:.1f} dB'),
+        textposition='outside',
+        hovertext=hover_text,
+        hoverinfo='text'
+    ))
+    
+    total_entries = int(df['chart_entries'].sum())
+    total_unique = int(df['unique_tracks'].sum())
+    
+    fig.update_layout(
+        title=f'Loudness (dB) über die Jahreszeiten<br><sub>{total_entries:,} Chart-Einträge · {total_unique:,} Tracks</sub>',
+        xaxis=dict(
+            title='Jahreszeit'
+        ),
+        yaxis=dict(
+            title='Loudness (dB)',
+            range=[df['loudness'].min() * 1.1, df['loudness'].max() * 0.9]  # Inverted because dB is negative
+        ),
+        height=400,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, system-ui, sans-serif'),
+        showlegend=False
+    )
+    
+    return fig.to_html(include_plotlyjs=False, div_id='loudness-timeline', config={'displayModeBar': False})
+
+
+def create_audio_features_by_weather(df):
+    """Line Chart: Audio Features über Wetter-Kategorien (Regen + Sonne)"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    # Already sorted in the query (rain first, then by sunshine)
+    x_labels = df['weather_category'].tolist()
+    
+    # Create hover text with weather metrics
+    hover_template = '<b>%{x}</b><br>%{fullData.name}: %{y:.3f}<br>' + \
+                    'Ø Sonne: %{customdata[0]:.1f}h<br>' + \
+                    'Ø Regen: %{customdata[1]:.1f}mm<br>' + \
+                    'Ø Temp: %{customdata[2]:.1f}°C<br>' + \
+                    'Chart Entries: %{customdata[3]:,}<br>' + \
+                    'Tracks: %{customdata[4]:,}<extra></extra>'
+    
+    customdata = [[row['avg_sunshine'], row['avg_precipitation'], row['avg_temperature'],
+                   row['chart_entries'], row['unique_tracks']] for _, row in df.iterrows()]
+    
+    fig = go.Figure()
+    
+    # Danceability
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['danceability'],
+        name='Danceability',
+        mode='lines+markers',
+        line=dict(color='#f59e0b', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Energy
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['energy'],
+        name='Energy',
+        mode='lines+markers',
+        line=dict(color='#ef4444', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Valence
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['valence'],
+        name='Valence',
+        mode='lines+markers',
+        line=dict(color='#10b981', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Instrumentalness
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['instrumentalness'],
+        name='Instrumentalness',
+        mode='lines+markers',
+        line=dict(color='#8b5cf6', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    # Acousticness
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['acousticness'],
+        name='Acousticness',
+        mode='lines+markers',
+        line=dict(color='#06b6d4', width=4),
+        marker=dict(size=12),
+        customdata=customdata,
+        hovertemplate=hover_template
+    ))
+    
+    total_entries = int(df['chart_entries'].sum())
+    total_unique = int(df['unique_tracks'].sum())
+    
+    fig.update_layout(
+        title=f'Audio Features nach Wetter-Bedingungen (Regen + Sonne)<br><sub>{total_entries:,} Chart-Einträge · {total_unique:,} Tracks</sub>',
+        xaxis=dict(
+            title='Wetter-Bedingungen',
+            tickangle=-15
+        ),
+        yaxis=dict(
+            title='Wert (0-1)',
+            range=[0, 1]
+        ),
+        height=450,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, system-ui, sans-serif'),
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    return fig.to_html(include_plotlyjs=False, div_id='audio-features-weather', config={'displayModeBar': False})
+
+
+def create_tempo_by_weather(df):
+    """Line Chart: Tempo über Wetter-Kategorien (Regen + Sonne)"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    x_labels = df['weather_category'].tolist()
+    
+    marker_colors = []
+    for _, row in df.iterrows():
+        if row['avg_precipitation'] > 5:
+            marker_colors.append('#3b82f6')  
+        elif row['avg_precipitation'] > 1:
+            marker_colors.append('#60a5fa')  
+        elif row['avg_sunshine'] < 4:
+            marker_colors.append('#94a3b8')  
+        elif row['avg_sunshine'] < 8:
+            marker_colors.append('#fbbf24') 
+        else:
+            marker_colors.append('#fcd34d')  
+    
+    # Create hover text
+    hover_text = []
+    for _, row in df.iterrows():
+        hover_text.append(
+            f"<b>{row['weather_category']}</b><br>" +
+            f"Tempo: {row['tempo']:.1f} BPM<br>" +
+            f"Ø Sonne: {row['avg_sunshine']:.1f}h<br>" +
+            f"Ø Regen: {row['avg_precipitation']:.1f}mm<br>" +
+            f"Ø Temp: {row['avg_temperature']:.1f}°C<br>" +
+            f"Chart Entries: {int(row['chart_entries']):,}<br>" +
+            f"Tracks: {int(row['unique_tracks']):,}"
+        )
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=x_labels,
+        y=df['tempo'],
+        name='Tempo',
+        mode='lines+markers',
+        line=dict(color='#8b5cf6', width=5),
+        marker=dict(
+            size=16,
+            color=marker_colors,
+            line=dict(color='white', width=2)
+        ),
+        fill='tozeroy',
+        fillcolor='rgba(139, 92, 246, 0.1)',
+        hovertext=hover_text,
+        hoverinfo='text'
+    ))
+    
+    total_entries = int(df['chart_entries'].sum())
+    total_unique = int(df['unique_tracks'].sum())
+    
+    fig.update_layout(
+        title=f'Tempo (BPM) nach Wetter-Bedingungen (Regen + Sonne)<br><sub>{total_entries:,} Chart-Einträge · {total_unique:,}Tracks</sub>',
+        xaxis=dict(
+            title='Wetter-Bedingungen',
+            tickangle=-15
+        ),
+        yaxis=dict(
+            title='Tempo (BPM)',
+            range=[df['tempo'].min() * 0.95, df['tempo'].max() * 1.05]
+        ),
+        height=400,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, system-ui, sans-serif'),
+        showlegend=False
+    )
+    
+    return fig.to_html(include_plotlyjs=False, div_id='tempo-weather', config={'displayModeBar': False})
+
+
+def create_loudness_by_weather(df):
+    """Bar Chart: Loudness über Wetter-Kategorien (Regen + Sonne)"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
+    
+    x_labels = df['weather_category'].tolist()
+    
+    # Create gradient colors from rain (blue) to sun (yellow)
+    bar_colors = []
+    for _, row in df.iterrows():
+        if row['avg_precipitation'] > 5:
+            bar_colors.append('#3b82f6')  # Blue for rain
+        elif row['avg_precipitation'] > 1:
+            bar_colors.append('#60a5fa')  # Light blue
+        elif row['avg_sunshine'] < 4:
+            bar_colors.append('#94a3b8')  # Gray
+        elif row['avg_sunshine'] < 8:
+            bar_colors.append('#fbbf24')  # Yellow
+        else:
+            bar_colors.append('#fcd34d')  # Bright yellow
+    
+    # Create hover text
+    hover_text = []
+    for _, row in df.iterrows():
+        hover_text.append(
+            f"<b>{row['weather_category']}</b><br>" +
+            f"Loudness: {row['loudness']:.1f} dB<br>" +
+            f"Ø Sonne: {row['avg_sunshine']:.1f}h<br>" +
+            f"Ø Regen: {row['avg_precipitation']:.1f}mm<br>" +
+            f"Ø Temp: {row['avg_temperature']:.1f}°C<br>" +
+            f"Chart Entries: {int(row['chart_entries']):,}<br>" +
+            f"Tracks: {int(row['unique_tracks']):,}"
+        )
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=x_labels,
+        y=df['loudness'],
+        marker=dict(
+            color=bar_colors,
+            line=dict(color='white', width=2)
+        ),
+        text=df['loudness'].apply(lambda x: f'{x:.1f} dB'),
+        textposition='outside',
+        hovertext=hover_text,
+        hoverinfo='text'
+    ))
+    
+    total_entries = int(df['chart_entries'].sum())
+    total_unique = int(df['unique_tracks'].sum())
+    
+    fig.update_layout(
+        title=f'Loudness (dB) nach Wetter-Bedingungen (Regen + Sonne)<br><sub>{total_entries:,} Chart-Einträge · {total_unique:,}Tracks</sub>',
+        xaxis=dict(
+            title='Wetter-Bedingungen',
+            tickangle=-15
+        ),
+        yaxis=dict(
+            title='Loudness (dB)',
+            range=[df['loudness'].min() * 1.1, df['loudness'].max() * 0.9]
+        ),
+        height=400,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, system-ui, sans-serif'),
+        showlegend=False
+    )
+    
+    return fig.to_html(include_plotlyjs=False, div_id='loudness-weather', config={'displayModeBar': False})
+
 
 def create_seasonal_chart(df):
     """Chart: Seasonal Streaming Trends"""
@@ -30,71 +737,6 @@ def create_seasonal_chart(df):
         font=dict(family='Inter, system-ui, sans-serif')
     )
     return fig.to_html(include_plotlyjs='cdn', div_id='seasonal-chart', config={'displayModeBar': False})
-
-def create_weather_chart(df):
-    """Chart: Weather Impact"""
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=df['temperature_range'],
-        y=df['total_streams'],
-        marker_color='#8b5cf6',
-        text=df['total_streams'].apply(lambda x: f'{int(x/1000)}K'),
-        textposition='outside'
-    ))
-    
-    fig.update_layout(
-        title='Streaming nach Temperatur',
-        xaxis_title='Temperaturbereich',
-        yaxis_title='Streams',
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='weather-chart', config={'displayModeBar': False})
-
-def create_mood_radar(df):
-    """Chart: Mood by Weather"""
-    fig = go.Figure()
-    
-    for _, row in df.iterrows():
-        fig.add_trace(go.Scatterpolar(
-            r=[row['avg_valence']*100, row['avg_energy']*100, row['avg_danceability']*100],
-            theta=['Valence<br>(Positivität)', 'Energy<br>(Energie)', 'Danceability<br>(Tanzbarkeit)'],
-            fill='toself',
-            name=row['weather']
-        ))
-    
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-        title='Track-Stimmung nach Wetterlage',
-        height=500,
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='mood-chart', config={'displayModeBar': False})
-
-def create_holiday_chart(df):
-    """Chart: Holiday Effect (from DimTime.is_public_holiday)"""
-    fig = px.pie(
-        df,
-        values='total_streams',
-        names='day_type',
-        title='Streaming: Feiertage vs Wochenende vs Werktage',
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
-    
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    fig.update_layout(
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='holiday-chart', config={'displayModeBar': False})
 
 def create_acoustic_chart(df):
     """Chart: Acoustic vs Electronic"""
@@ -160,31 +802,6 @@ def create_key_distribution_chart(df):
     
     return fig.to_html(include_plotlyjs=False, div_id='key-chart', config={'displayModeBar': False})
 
-def create_tempo_weather_chart(df):
-    """Tempo bei verschiedenen Wetterbedingungen"""
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=df['weather'],
-        y=df['avg_tempo'],
-        marker_color='#8b5cf6',
-        text=df['avg_tempo'].apply(lambda x: f'{x:.0f} BPM'),
-        textposition='outside',
-        name='Tempo'
-    ))
-    
-    fig.update_layout(
-        title='Durchschnittliches Tempo nach Wetterlage',
-        xaxis_title='Wetter',
-        yaxis_title='Tempo (BPM)',
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='tempo-weather-chart', config={'displayModeBar': False})
-
 def create_danceability_sunshine_chart(df):
     """Danceability vs Sonnenstunden"""
     # Sort by sunshine hours
@@ -230,68 +847,39 @@ def create_danceability_sunshine_chart(df):
     )
     
     return fig.to_html(include_plotlyjs=False, div_id='danceability-sunshine-chart', config={'displayModeBar': False})
-
-def create_energy_temperature_scatter(df):
-    """Scatter: Energy vs Temperature"""
-    fig = px.scatter(
-        df,
-        x='temperature',
-        y='avg_energy',
-        color='season',
-        size='sample_size',
-        hover_data=['avg_tempo', 'sunshine'],
-        title='Track Energy Level nach Temperatur',
-        labels={
-            'temperature': 'Temperatur (°C)',
-            'avg_energy': 'Energy Level',
-            'season': 'Jahreszeit'
-        },
-        color_discrete_map={
-            'Winter': '#3b82f6',
-            'Frühling': '#10b981',
-            'Sommer': '#f59e0b',
-            'Herbst': '#ef4444'
-        }
-    )
     
-    fig.update_layout(
-        height=450,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
+def create_lockdown_vs_normal_comparison(df):
+    """Lockdown vs 2025 - Feature Comparison Chart"""
+    if df.empty:
+        return "<p>Keine Daten verfügbar</p>"
     
-    return fig.to_html(include_plotlyjs=False, div_id='energy-temp-scatter', config={'displayModeBar': False})
-
-def create_winter_summer_comparison(df):
-    """Winter vs Sommer - Feature Comparison Chart"""
     # Sortiere nach absoluter Differenz
     df = df.sort_values('diff_pct', key=abs, ascending=False)
     
     fig = go.Figure()
     
-    # Winter values
+    # Lockdown values
     fig.add_trace(go.Bar(
-        name='Winter ❄️',
+        name='Lockdowns',
         x=df['feature'],
-        y=df['winter'],
-        marker_color='#3b82f6',
-        text=df['winter'].apply(lambda x: f'{x:.2f}'),
+        y=df['lockdown'],
+        marker_color='#ef4444',
+        text=df['lockdown'].apply(lambda x: f'{x:.2f}'),
         textposition='outside'
     ))
     
-    # Sommer values
+    # 2025 values
     fig.add_trace(go.Bar(
-        name='Sommer ☀️',
+        name='2025',
         x=df['feature'],
-        y=df['sommer'],
-        marker_color='#f59e0b',
-        text=df['sommer'].apply(lambda x: f'{x:.2f}'),
+        y=df['normal_2025'],
+        marker_color='#10b981',
+        text=df['normal_2025'].apply(lambda x: f'{x:.2f}'),
         textposition='outside'
     ))
     
     fig.update_layout(
-        title='Winter vs Sommer: Audio Feature Vergleich',
+        title='Lockdown vs 2025: Wie COVID unsere Musik veränderte<br><sub>März 2020-Mai 2021, Dez 2021-März 2022 vs Jan-Dez 2025</sub>',
         xaxis_title='Audio Feature',
         yaxis_title='Durchschnittswert',
         barmode='group',
@@ -302,142 +890,4 @@ def create_winter_summer_comparison(df):
         showlegend=True
     )
     
-    return fig.to_html(include_plotlyjs=False, div_id='winter-summer-chart', config={'displayModeBar': False})
-
-def create_seasonal_radar_all(df):
-    """Radar Chart: Alle 4 Jahreszeiten"""
-    # Normalize to 0-100 scale
-    features = ['valence', 'energy', 'danceability', 'acousticness']
-    
-    fig = go.Figure()
-    
-    season_colors = {
-        'Winter': '#3b82f6',
-        'Frühling': '#10b981',
-        'Sommer': '#f59e0b',
-        'Herbst': '#ef4444'
-    }
-    
-    for season in ['Winter', 'Frühling', 'Sommer', 'Herbst']:
-        season_data = df[df['season'] == season]
-        if not season_data.empty:
-            row = season_data.iloc[0]
-            
-            fig.add_trace(go.Scatterpolar(
-                r=[row[f] * 100 for f in features],
-                theta=['Valence<br>(Positivität)', 'Energy<br>(Energie)', 
-                       'Danceability<br>(Tanzbarkeit)', 'Acousticness<br>(Akustisch)'],
-                fill='toself',
-                name=season,
-                line=dict(color=season_colors[season], width=2)
-            ))
-    
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True, range=[0, 100])
-        ),
-        title='Audio Feature Profile nach Jahreszeit',
-        height=500,
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='seasonal-radar-all', config={'displayModeBar': False})
-    
-def create_loudness_rain_chart(df):
-    """Loudness bei Regen vs Trocken"""
-    fig = go.Figure()
-    
-    # Sort by precipitation
-    df = df.sort_values('avg_precipitation')
-    
-    fig.add_trace(go.Bar(
-        x=df['rain_category'],
-        y=df['avg_loudness'],
-        marker_color=['#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe'],
-        text=df['avg_loudness'].apply(lambda x: f'{x:.1f} dB'),
-        textposition='outside'
-    ))
-    
-    fig.update_layout(
-        title='Track Loudness nach Niederschlag',
-        xaxis_title='Niederschlagsmenge',
-        yaxis_title='Loudness (dB)',
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='loudness-rain-chart', config={'displayModeBar': False})
-
-def create_correlation_heatmap(df):
-    """Korrelations-Heatmap: Wetter × Audio Features"""
-    # Select only relevant correlations
-    weather_cols = ['temperature', 'precipitation', 'sunshine', 'wind_speed']
-    audio_cols = ['tempo', 'energy', 'danceability', 'valence', 'loudness', 'acousticness']
-    
-    # Extract cross-correlation
-    correlation_matrix = df.loc[audio_cols, weather_cols]
-    
-    fig = go.Figure(data=go.Heatmap(
-        z=correlation_matrix.values,
-        x=['Temperatur', 'Regen', 'Sonne', 'Wind'],
-        y=['Tempo', 'Energy', 'Danceability', 'Valence', 'Loudness', 'Acousticness'],
-        colorscale='RdBu',
-        zmid=0,
-        text=correlation_matrix.values,
-        texttemplate='%{text:.2f}',
-        textfont={"size": 10},
-        colorbar=dict(title="Korrelation")
-    ))
-    
-    fig.update_layout(
-        title='Korrelation: Wetter × Audio Features',
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='Inter, system-ui, sans-serif')
-    )
-    
-    return fig.to_html(include_plotlyjs=False, div_id='correlation-heatmap', config={'displayModeBar': False})
-
-def create_top_tracks_table(df):
-    """Table: Top Tracks per Season"""
-    seasons_order = ['Frühling', 'Sommer', 'Herbst', 'Winter']
-    icons = {
-        'Frühling': '🌸',
-        'Sommer': '☀️',
-        'Herbst': '🍂',
-        'Winter': '❄️'
-    }
-    
-    html = '<div class="top-tracks-grid">'
-    
-    for season in seasons_order:
-        season_data = df[df['season'] == season].head(5)
-        
-        if season_data.empty:
-            continue
-        
-        html += f'''
-        <div class="season-section">
-            <h3>{icons[season]} {season}</h3>
-            <div class="tracks-list">
-        '''
-        
-        for _, row in season_data.iterrows():
-            streams_formatted = f"{int(row['total_streams']/1000)}K"
-            html += f'''
-            <div class="track-item">
-                <div class="track-info">
-                    <div class="track-name">{row['track_name']}</div>
-                    <div class="track-artist">{row['artist_names']}</div>
-                </div>
-                <div class="track-streams">{streams_formatted}</div>
-            </div>
-            '''
-        
-        html += '</div></div>'
-    
-    html += '</div>'
-    return html
+    return fig.to_html(include_plotlyjs=False, div_id='lockdown-comparison-chart', config={'displayModeBar': False})

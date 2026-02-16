@@ -13,7 +13,7 @@ class WeatherService:
     BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
     
     def __init__(self, session: aiohttp.ClientSession, start_date: str, end_date: str):
-        self.session = session  # ✅ Session von außen!
+        self.session = session  
         self.start_date = start_date
         self.end_date = end_date
         self.locations = WEATHER_LOCATIONS
@@ -41,7 +41,7 @@ class WeatherService:
                     
                     if response.status == 429:
                         wait_time = (2 ** attempt) * 2
-                        logger.warning(f"⏳ Rate limited for {name}, waiting {wait_time}s")
+                        logger.warning(f"Rate limited for {name}, waiting {wait_time}s")
                         await asyncio.sleep(wait_time)
                         continue
                     
@@ -66,15 +66,15 @@ class WeatherService:
                             "sunshine_hours": sunshine[i] / 3600 if sunshine[i] else None
                         })
                     
-                    logger.info(f"✓ {name}: {len(records)} days")
+                    logger.info(f"{name}: {len(records)} days")
                     return records
                     
             except Exception as e:
-                logger.warning(f"⚠️ {name} attempt {attempt+1}: {e}")
+                logger.warning(f"{name} attempt {attempt+1}: {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2)
         
-        logger.error(f"✗ Failed: {name}")
+        logger.error(f"Failed: {name}")
         return []
     
     async def fetch_all(self) -> AsyncGenerator[Dict, None]:
@@ -88,11 +88,11 @@ class WeatherService:
             all_location_data.append(records)
             await asyncio.sleep(3)
         
-        logger.info(f"✓ Fetched all {len(self.locations)} locations")
+        logger.info(f"Fetched {len(self.locations)} locations")
         logger.info("Computing daily averages across Germany...")
         
         daily_averages = self._compute_daily_averages(all_location_data)
-        logger.info(f"✓ Computed {len(daily_averages)} daily averages")
+        logger.info(f"Computed {len(daily_averages)} daily averages")
         
         for record in daily_averages:
             yield record

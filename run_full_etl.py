@@ -1,7 +1,3 @@
-"""
-Master ETL Orchestrator - Sound of Seasons Data Warehouse
-Coordinates all ETL steps in proper sequence
-"""
 import asyncio
 import inspect
 import logging

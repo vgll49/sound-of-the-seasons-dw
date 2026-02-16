@@ -1,4 +1,3 @@
-<!-- visualization/templates/dashboard.html -->
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -43,6 +42,12 @@
             opacity: 0.95;
         }
         
+        .header .date-range {
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+            opacity: 0.85;
+        }
+        
         .kpis {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -80,6 +85,226 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
+        /* Current Top 3 Tracks */
+        .current-top-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .top-track-card {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            position: relative;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .top-track-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+        }
+
+        .rank-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.25rem;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .track-cover {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 12px;
+            object-fit: cover;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .track-details {
+            text-align: center;
+        }
+
+        .track-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 0.5rem;
+            line-height: 1.3;
+        }
+
+        .track-artist {
+            font-size: 1rem;
+            color: #6b7280;
+            margin-bottom: 1rem;
+        }
+
+        .track-stats {
+            margin-top: 1rem;
+        }
+
+        .stat-badge {
+            display: inline-block;
+            background: #f3f4f6;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #374151;
+        }
+        /* Weekly Changes Widget */
+        .weekly-changes-widget {
+            background: white;
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            margin-bottom: 3rem;
+        }
+        
+        .widget-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .widget-header h3 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 1rem;
+        }
+        
+        .comparison-dates {
+            font-size: 1.125rem;
+            color: #374151;
+            margin-bottom: 0.5rem;
+        }
+        
+        .comparison-dates .current-week {
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .comparison-dates .vs {
+            margin: 0 0.5rem;
+            color: #9ca3af;
+        }
+        
+        .comparison-dates .previous-week {
+            color: #6b7280;
+        }
+        
+        .sample-info {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+        
+        .changes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .change-card {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            border: 2px solid #f3f4f6;
+            transition: all 0.2s;
+        }
+        
+        .change-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+        
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .feature-name {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+        
+        .current-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 0.5rem;
+        }
+        
+        .change-indicator {
+            margin-bottom: 0.5rem;
+        }
+        
+        .change-indicator .arrow {
+            font-size: 1.5rem;
+            margin-right: 0.25rem;
+        }
+        
+        .change-indicator .change-text {
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        
+        .change-details {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+        
+        .change-abs {
+            font-weight: 600;
+        }
+        
+        .change-pct {
+            font-weight: 400;
+        }
+        .section-label {
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: #374151;
+        margin: 2rem 0 1rem 0;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        }
+
+        .weather-grid {
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
+
+        .weather-card {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-color: #bae6fd;
+        }
+
+        .weather-card:hover {
+            border-color: #38bdf8;
+        }
+
+        .weather-period-info {
+        font-size: 0.75rem;
+        color: #9ca3af;
+        margin-top: 0.25rem;
+        }
         
         .section-header {
             text-align: center;
@@ -115,39 +340,7 @@
         .chart-card.full-width {
             grid-column: 1 / -1;
         }
-        
-        .top-tracks-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-        }
-        
-        .season-section h3 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            color: #1f2937;
-        }
-        
-        .tracks-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-        
-        .track-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem;
-            background: #f9fafb;
-            border-radius: 8px;
-            transition: background 0.2s;
-        }
-        
-        .track-item:hover {
-            background: #f3f4f6;
-        }
-        
+
         .track-name {
             font-weight: 600;
             color: #111827;
@@ -156,12 +349,6 @@
         .track-artist {
             font-size: 0.875rem;
             color: #6b7280;
-        }
-        
-        .track-streams {
-            font-weight: 700;
-            color: #8b5cf6;
-            font-size: 1.125rem;
         }
         
         .footer {
@@ -176,6 +363,7 @@
             .section-header h2 { font-size: 1.75rem; }
             .chart-grid { grid-template-columns: 1fr; }
             .top-tracks-grid { grid-template-columns: 1fr; }
+            .changes-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -183,7 +371,8 @@
     <div class="container">
         <div class="header">
             <h1>🎵 Sound of the Seasons</h1>
-            <p>Spotify Charts × Wetter × Feiertage | Deutschland</p>
+            <p>Spotify Charts × Wetter | Deutschland Top 200</p>
+            <p class="date-range">{{ kpis.date_range }}</p>
         </div>
         
         <!-- KPIs -->
@@ -201,14 +390,26 @@
                 <div class="kpi-value">{{ kpis.avg_temp }}°C</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Feiertage</div>
-                <div class="kpi-value">{{ kpis.total_holidays }}</div>
-            </div>
-            <div class="kpi-card">
                 <div class="kpi-label">Audio Features</div>
                 <div class="kpi-value">{{ kpis.feature_coverage }}%</div>
             </div>
         </div>
+        
+        <!-- Current Week Top 3 -->
+        <div class="section-header">
+            <h2>🔥 Top 3 Diese Woche</h2>
+            <p>Die beliebtesten Tracks der aktuellen Charts</p>
+        </div>
+
+        {{ charts.current_top_3 | safe }}
+
+        <!-- Weekly Changes -->
+        <div class="section-header" style="margin-top: 2rem;">
+            <h2>📈 Wöchentliche Veränderungen</h2>
+            <p>Wie haben sich die Audio Features im Durchschnitt verändert?</p>
+        </div>
+
+        {{ charts.weekly_changes | safe }}
         
         <!-- SECTION 1: Streaming Patterns -->
         <div class="section-header">
@@ -220,27 +421,25 @@
             <div class="chart-card full-width">
                 {{ charts.seasonal | safe }}
             </div>
-            
-            <div class="chart-card">
-                {{ charts.weather | safe }}
-            </div>
-            
-            <div class="chart-card">
-                {{ charts.holiday | safe }}
-            </div>
         </div>
         
         <!-- SECTION 2: Audio Features & Mood -->
         <div class="section-header">
             <h2>🎵 Audio Features & Stimmung</h2>
-            <p>Welche musikalischen Eigenschaften haben die Charts?</p>
+            <p>Welche musikalischen Eigenschaften haben die Charts im Jahresverlauf?</p>
         </div>
-        
+
         <div class="chart-grid">
+            <!-- NEW: Timeline Charts -->
             <div class="chart-card full-width">
-                {{ charts.mood | safe }}
+                {{ charts.audio_features_timeline | safe }}
             </div>
             
+            <div class="chart-card full-width">
+                {{ charts.tempo_timeline | safe }}
+            </div>
+            
+            <!-- Existing charts -->
             <div class="chart-card">
                 {{ charts.acoustic | safe }}
             </div>
@@ -248,62 +447,49 @@
             <div class="chart-card">
                 {{ charts.key_distribution | safe }}
             </div>
-            
-            <!-- NEU: Winter vs Sommer -->
-            <div class="chart-card full-width">
-                {{ charts.winter_summer | safe }}
-            </div>
-            
-            <!-- NEU: Seasonal Audio Profile -->
-            <div class="chart-card full-width">
-                {{ charts.seasonal_radar | safe }}
-            </div>
         </div>
         
-        <!-- SECTION 3: Wetter × Audio Features -->
+        <!-- SECTION 3: Wetter × Musik-Eigenschaften -->
         <div class="section-header">
             <h2>🌤️ Wetter × Musik-Eigenschaften</h2>
             <p>Wie beeinflusst das Wetter die Eigenschaften der gehörten Musik?</p>
         </div>
-        
+
         <div class="chart-grid">
-            <div class="chart-card">
-                {{ charts.tempo_weather | safe }}
+            <!-- NEW: Comprehensive Weather Charts (parallel zu Seasonal) -->
+            <div class="chart-card full-width">
+                {{ charts.audio_features_weather | safe }}
             </div>
             
             <div class="chart-card">
-                {{ charts.loudness_rain | safe }}
+                {{ charts.tempo_weather_new | safe }}
             </div>
+            
+            <div class="chart-card">
+                {{ charts.loudness_weather_new | safe }}
+            </div>
+            
+            <!-- Existing detailed weather charts -->
             
             <div class="chart-card full-width">
                 {{ charts.danceability_sunshine | safe }}
             </div>
-            
-            <div class="chart-card full-width">
-                {{ charts.energy_temperature | safe }}
-            </div>
-            
-            <div class="chart-card full-width">
-                {{ charts.correlation | safe }}
-            </div>
         </div>
-        
-        <!-- SECTION 4: Top Tracks -->
+        <!-- SECTION: COVID-19 Impact -->
         <div class="section-header">
-            <h2>⭐ Top Tracks</h2>
-            <p>Die beliebtesten Songs pro Jahreszeit</p>
+            <h2>🦠 COVID-19 Impact</h2>
+            <p>Wie haben Lockdowns unser Musikhören verändert?</p>
         </div>
-        
+
         <div class="chart-grid">
             <div class="chart-card full-width">
-                {{ charts.top_tracks | safe }}
+                {{ charts.lockdown_comparison | safe }}
             </div>
-        </div>
-        
+        </div>            
         <div class="footer">
             <p>Data Warehouse Project | ETL: Python + SQLAlchemy + SQLite</p>
             <p style="margin-top: 0.5rem; font-size: 0.875rem;">
-                Data Sources: Spotify Charts, Open-Meteo Weather API, Ferien-API.de
+                Data Sources: Soundcharts API, Open-Meteo Weather API
             </p>
         </div>
     </div>

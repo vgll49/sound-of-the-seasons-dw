@@ -1,7 +1,3 @@
-"""
-Soundcharts API Service
-Reusable service for fetching Spotify DE Top 200 charts with audio features
-"""
 import aiohttp
 import asyncio
 import pandas as pd
@@ -13,7 +9,6 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 class SoundchartsService:
-    """Service for fetching and processing Soundcharts data"""
     
     def __init__(self, session: aiohttp.ClientSession, app_id: str, api_key: str):
         self.session = session

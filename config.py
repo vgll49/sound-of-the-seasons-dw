@@ -1,11 +1,6 @@
-# config.py
-"""
-Central Configuration for Sound of Seasons Data Warehouse
-"""
 from datetime import date, timedelta
 
-# ==================== DATE RANGES ====================
-START_DATE = date(2020, 1, 1)  # Extended to 2020!
+START_DATE = date(2020, 1, 1)  
 END_DATE = date(2026, 2, 14)
 
 # Derived
@@ -31,14 +26,14 @@ CHART_START_DATE = get_first_sunday(START_DATE)  # First Sunday >= START_DATE
 CHART_END_DATE = get_last_sunday(END_DATE)        # Last Sunday <= END_DATE
 
 
-# ==================== DATA SOURCES ====================
+# data sources
 CHARTS_CSV = "data/raw/soundcharts_charts.csv"
 FEATURES_CSV = "data/raw/soundcharts_track_features.csv"
 
 # Database
 DATABASE_URL = "sqlite:///sound_of_seasons.db"
 
-# ==================== ETL SETTINGS ====================
+# etl settings
 BATCH_SIZE_TRACKS = 1000
 BATCH_SIZE_FACTS = 5000
 BATCH_SIZE_WEATHER = 500
@@ -47,7 +42,7 @@ BATCH_SIZE_WEATHER = 500
 CHARTS_BATCH_SIZE = 10  # Weeks per batch
 FEATURES_BATCH_SIZE = 50  # Songs per batch
 
-# Weather locations (all 16 Bundesländer)
+# Weather locations 
 WEATHER_LOCATIONS = {
     "Baden-Württemberg": (48.7758, 9.1829),
     "Bayern": (48.1351, 11.5820),
@@ -67,11 +62,11 @@ WEATHER_LOCATIONS = {
     "Thüringen": (50.9848, 11.0299)
 }
 
-# ==================== VALIDATION ====================
+# validation
 EXPECTED_DIM_WEATHER_MIN = 300
 EXPECTED_DIM_TRACK_MIN = 3000  
 
-# ==================== DISPLAY ====================
+# display
 DATASET_NAME = "Soundcharts DE Top 200"
 DATASET_YEARS = f"{START_DATE.year}-{END_DATE.year}"
 DATE_RANGE_STR = f"{START_DATE} → {END_DATE}"

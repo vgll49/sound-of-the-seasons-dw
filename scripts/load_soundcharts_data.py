@@ -1,4 +1,3 @@
-"""Load Soundcharts data into database"""
 import os
 import pandas as pd
 from services.data_loader import DataLoader

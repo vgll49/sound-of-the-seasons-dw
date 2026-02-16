@@ -1,8 +1,3 @@
-# visualization/stats.py
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from sqlalchemy import func, case, or_
 from sqlalchemy.orm import Session
 from db.database import SessionLocal
@@ -17,7 +12,7 @@ class SoundOfSeasonsStats:
         self.db: Session = SessionLocal()
     
     def get_kpis(self, country: str = None) -> dict:
-        """KPIs - optional nach Country filtern"""
+        """KPIs - ohne Feiertage"""
         query_base = self.db.query(FactTrackChart)
         
         if country:
@@ -31,7 +26,6 @@ class SoundOfSeasonsStats:
             func.count(func.distinct(FactTrackChart.track_id))
         ).scalar() or 0
         
-        # Average temp from DimWeather (Deutschland-wide average now)
         avg_temp = self.db.query(
             func.avg(DimWeather.temperature_avg)
         ).scalar() or 0
@@ -55,47 +49,422 @@ class SoundOfSeasonsStats:
                 DimTrack.danceability.isnot(None)
             ).scalar() or 0
         
+        # Date range
+        date_range = self.db.query(
+            func.min(DimTime.date),
+            func.max(DimTime.date)
+        ).join(
+            FactTrackChart, DimTime.date_id == FactTrackChart.date_id
+        ).first()
+    
         return {
             'total_streams': f"{int(total_streams/1_000_000):.1f}M" if total_streams > 1_000_000 else f"{int(total_streams/1_000):.1f}K",
             'unique_tracks': unique_tracks,
-            'country': country or 'All',
             'avg_temp': f"{avg_temp:.1f}",
-            'feature_coverage': f"{(tracks_with_features/unique_tracks*100):.0f}" if unique_tracks > 0 else "0"
+            'feature_coverage': f"{(tracks_with_features/unique_tracks*100):.0f}" if unique_tracks > 0 else "0",
+            'date_range': f"{date_range[0]} - {date_range[1]}" if date_range else "N/A"
         }
 
-    def get_tempo_by_weather(self, country: str = 'de') -> pd.DataFrame:
-        """Tempo bei Sonne vs Regen"""
-        weather_condition = case(
-            (DimWeather.precipitation_mm > 5, 'Regen ☔'),
-            (DimWeather.sunshine_hours > 8, 'Sonne ☀️'),
-            (DimWeather.sunshine_hours > 4, 'Teilweise Bewölkt 🌤️'),
-            else_='Bewölkt ☁️'
-        )
+    def get_current_top_tracks(self, country: str = 'de', limit: int = 3) -> pd.DataFrame:
+        """
+        Current week's top 3 tracks - simple version without changes
+        Returns: track_name, artist, image_url, streams, position
+        """
+        # Get latest Sunday
+        latest_date = self.db.query(
+            func.max(DimTime.date)
+        ).join(
+            FactTrackChart, DimTime.date_id == FactTrackChart.date_id
+        ).filter(
+            FactTrackChart.country == country
+        ).scalar()
         
+        if not latest_date:
+            return pd.DataFrame()
+        
+        # Current week top 3
         query = self.db.query(
-            weather_condition.label('weather'),
-            func.avg(DimTrack.tempo).label('avg_tempo'),
-            func.avg(DimTrack.energy).label('avg_energy'),
-            func.avg(DimWeather.sunshine_hours).label('avg_sunshine'),
-            func.count(FactTrackChart.fact_id).label('sample_size')
+            DimTrack.track_name,
+            DimTrack.artist_names,
+            DimTrack.image_url,
+            FactTrackChart.stream_count.label('streams'),
+            FactTrackChart.chart_position.label('position')
         ).join(
             FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
         ).join(
-            DimWeather, FactTrackChart.weather_id == DimWeather.weather_id
+            DimTime, FactTrackChart.date_id == DimTime.date_id
         ).filter(
-            DimTrack.tempo.isnot(None)
+            DimTime.date == latest_date,
+            FactTrackChart.country == country
+        ).order_by(
+            FactTrackChart.chart_position
+        ).limit(limit)
+        
+        df = pd.read_sql(query.statement, self.db.bind)
+        
+        if not df.empty:
+            df['chart_date'] = latest_date
+        
+        return df
+
+    def get_weekly_feature_changes(self, country: str = 'de') -> dict:
+        """
+        Vergleich durchschnittliche Audio Features + Wetter: Diese Woche vs Letzte Woche
+        """
+        from datetime import timedelta
+        
+        # Latest Sunday (Chart-Datum)
+        latest_chart_date = self.db.query(
+            func.max(DimTime.date)
+        ).join(
+            FactTrackChart, DimTime.date_id == FactTrackChart.date_id
+        ).filter(
+            FactTrackChart.country == country
+        ).scalar()
+        
+        if not latest_chart_date:
+            return {}
+        
+        previous_chart_date = latest_chart_date - timedelta(days=7)
+        
+        # Wetter-Perioden: 7 Tage vor Chart
+        current_weather_end = latest_chart_date
+        current_weather_start = latest_chart_date - timedelta(days=6)
+        
+        previous_weather_end = previous_chart_date
+        previous_weather_start = previous_chart_date - timedelta(days=6)
+        
+        # Current week - Audio Features
+        current_audio = self.db.query(
+            func.avg(DimTrack.valence).label('valence'),
+            func.avg(DimTrack.danceability).label('danceability'),
+            func.avg(DimTrack.energy).label('energy'),
+            func.avg(DimTrack.tempo).label('tempo'),
+            func.avg(DimTrack.acousticness).label('acousticness')
+        ).join(
+            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
+        ).join(
+            DimTime, FactTrackChart.date_id == DimTime.date_id
+        ).filter(
+            DimTime.date == latest_chart_date,
+            FactTrackChart.country == country,
+            DimTrack.valence.isnot(None)
+        ).first()
+        
+        # Previous week - Audio Features
+        previous_audio = self.db.query(
+            func.avg(DimTrack.valence).label('valence'),
+            func.avg(DimTrack.danceability).label('danceability'),
+            func.avg(DimTrack.energy).label('energy'),
+            func.avg(DimTrack.tempo).label('tempo'),
+            func.avg(DimTrack.acousticness).label('acousticness')
+        ).join(
+            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
+        ).join(
+            DimTime, FactTrackChart.date_id == DimTime.date_id
+        ).filter(
+            DimTime.date == previous_chart_date,
+            FactTrackChart.country == country,
+            DimTrack.valence.isnot(None)
+        ).first()
+        
+        # Count UNIQUE songs across both charts (with features)
+        unique_songs_count = self.db.query(
+            func.count(func.distinct(DimTrack.track_id))
+        ).join(
+            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
+        ).join(
+            DimTime, FactTrackChart.date_id == DimTime.date_id
+        ).filter(
+            DimTime.date.in_([latest_chart_date, previous_chart_date]),
+            FactTrackChart.country == country,
+            DimTrack.valence.isnot(None)
+        ).scalar()
+        
+        # Current week - Weather (7 Tage vor Chart)
+        current_weather = self.db.query(
+            func.avg(DimWeather.temperature_avg).label('temperature'),
+            func.avg(DimWeather.sunshine_hours).label('sunshine'),
+            func.avg(DimWeather.precipitation_mm).label('precipitation'),
+            func.avg(DimWeather.wind_speed_kmh).label('wind_speed')
+        ).join(
+            DimTime, DimWeather.date_id == DimTime.date_id
+        ).filter(
+            DimTime.date.between(current_weather_start, current_weather_end)
+        ).first()
+        
+        # Previous week - Weather (7 Tage vor vorherigem Chart)
+        previous_weather = self.db.query(
+            func.avg(DimWeather.temperature_avg).label('temperature'),
+            func.avg(DimWeather.sunshine_hours).label('sunshine'),
+            func.avg(DimWeather.precipitation_mm).label('precipitation'),
+            func.avg(DimWeather.wind_speed_kmh).label('wind_speed')
+        ).join(
+            DimTime, DimWeather.date_id == DimTime.date_id
+        ).filter(
+            DimTime.date.between(previous_weather_start, previous_weather_end)
+        ).first()
+        
+        if not current_audio or not previous_audio or not current_weather or not previous_weather:
+            return {}
+        
+        return {
+            'chart_date': latest_chart_date,
+            'previous_chart_date': previous_chart_date,
+            'weather_period_current': f"{current_weather_start.strftime('%d.%m')} - {current_weather_end.strftime('%d.%m.%Y')}",
+            'weather_period_previous': f"{previous_weather_start.strftime('%d.%m')} - {previous_weather_end.strftime('%d.%m.%Y')}",
+            'unique_songs': unique_songs_count,
+            'features': {
+                'valence': {
+                    'current': current_audio.valence,
+                    'previous': previous_audio.valence,
+                    'change': current_audio.valence - previous_audio.valence,
+                    'change_pct': ((current_audio.valence - previous_audio.valence) / previous_audio.valence * 100) if previous_audio.valence else 0
+                },
+                'danceability': {
+                    'current': current_audio.danceability,
+                    'previous': previous_audio.danceability,
+                    'change': current_audio.danceability - previous_audio.danceability,
+                    'change_pct': ((current_audio.danceability - previous_audio.danceability) / previous_audio.danceability * 100) if previous_audio.danceability else 0
+                },
+                'energy': {
+                    'current': current_audio.energy,
+                    'previous': previous_audio.energy,
+                    'change': current_audio.energy - previous_audio.energy,
+                    'change_pct': ((current_audio.energy - previous_audio.energy) / previous_audio.energy * 100) if previous_audio.energy else 0
+                },
+                'tempo': {
+                    'current': current_audio.tempo,
+                    'previous': previous_audio.tempo,
+                    'change': current_audio.tempo - previous_audio.tempo,
+                    'change_pct': ((current_audio.tempo - previous_audio.tempo) / previous_audio.tempo * 100) if previous_audio.tempo else 0
+                },
+                'acousticness': {
+                    'current': current_audio.acousticness,
+                    'previous': previous_audio.acousticness,
+                    'change': current_audio.acousticness - previous_audio.acousticness,
+                    'change_pct': ((current_audio.acousticness - previous_audio.acousticness) / previous_audio.acousticness * 100) if previous_audio.acousticness else 0
+                }
+            },
+            'weather': {
+                'temperature': {
+                    'current': current_weather.temperature,
+                    'previous': previous_weather.temperature,
+                    'change': current_weather.temperature - previous_weather.temperature
+                },
+                'sunshine': {
+                    'current': current_weather.sunshine,
+                    'previous': previous_weather.sunshine,
+                    'change': current_weather.sunshine - previous_weather.sunshine
+                },
+                'precipitation': {
+                    'current': current_weather.precipitation,
+                    'previous': previous_weather.precipitation,
+                    'change': current_weather.precipitation - previous_weather.precipitation
+                }
+            }
+        }
+
+    def get_audio_features_by_season(self, country: str = 'de') -> pd.DataFrame:
+        """
+        Audio Features Durchschnitt pro Jahreszeit
+        Jeder Chart-Eintrag zählt (Track kann in mehreren Seasons sein)
+        """
+        query = self.db.query(
+            DimTime.season,
+            func.avg(DimTrack.danceability).label('danceability'),
+            func.avg(DimTrack.energy).label('energy'),
+            func.avg(DimTrack.instrumentalness).label('instrumentalness'),
+            func.avg(DimTrack.loudness).label('loudness'),
+            func.avg(DimTrack.valence).label('valence'),
+            func.avg(DimTrack.tempo).label('tempo'),
+            func.avg(DimTrack.acousticness).label('acousticness'),
+            func.count(FactTrackChart.fact_id).label('chart_entries'),
+            func.count(func.distinct(DimTrack.track_id)).label('unique_tracks')
+        ).join(
+            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
+        ).join(
+            DimTime, FactTrackChart.date_id == DimTime.date_id
+        ).filter(
+            DimTrack.danceability.isnot(None)
         )
         
         if country:
             query = query.filter(FactTrackChart.country == country)
         
-        query = query.group_by(
-            weather_condition
-        ).having(
-            func.count(FactTrackChart.fact_id) > 20
+        query = query.group_by(DimTime.season)
+        
+        df = pd.read_sql(query.statement, self.db.bind)
+        
+        # Order seasons correctly
+        season_order = {'Frühling': 0, 'Sommer': 1, 'Herbst': 2, 'Winter': 3}
+        if not df.empty:
+            df['season_order'] = df['season'].map(season_order)
+            df = df.sort_values('season_order').drop('season_order', axis=1)
+        
+        return df
+
+    def get_audio_features_by_weather(self, country: str = 'de') -> pd.DataFrame:
+        """
+        Audio Features nach Wetter-Kategorien 
+        Wetter = Durchschnitt der 7 Tage VOR Chart-Sonntag
+        
+        Kategorien:
+        - Regnerisch: >5mm Niederschlag
+        - Sehr Sonnig: >12h Sonne
+        - Sonnig: 8-12h Sonne
+        """
+        from datetime import timedelta, datetime
+        import pandas as pd
+        
+        # Get all chart dates
+        chart_dates_query = self.db.query(
+            DimTime.date
+        ).join(
+            FactTrackChart, DimTime.date_id == FactTrackChart.date_id
         )
         
-        return pd.read_sql(query.statement, self.db.bind)
+        if country:
+            chart_dates_query = chart_dates_query.filter(FactTrackChart.country == country)
+        
+        chart_dates_query = chart_dates_query.distinct().order_by(DimTime.date)
+        
+        chart_dates = [row.date for row in chart_dates_query.all()]
+        
+        # For each chart date, calculate weather average of previous 7 days
+        weather_data = []
+        
+        for chart_date in chart_dates:
+            # Ensure chart_date is a date object
+            if isinstance(chart_date, str):
+                chart_date = datetime.strptime(chart_date, '%Y-%m-%d').date()
+            
+            # Weather period: 7 days before chart (including chart day)
+            weather_end = chart_date
+            weather_start = chart_date - timedelta(days=6)
+            
+            # Calculate average weather for this period
+            weather_avg = self.db.query(
+                func.avg(DimWeather.temperature_avg).label('avg_temperature'),
+                func.avg(DimWeather.precipitation_mm).label('avg_precipitation'),
+                func.avg(DimWeather.sunshine_hours).label('avg_sunshine'),
+            ).join(
+                DimTime, DimWeather.date_id == DimTime.date_id
+            ).filter(
+                DimTime.date.between(weather_start, weather_end)
+            ).first()
+            
+            if weather_avg and weather_avg.avg_sunshine is not None:
+                # Categorize based on weekly averages - 3 clear categories
+                category = None
+                
+                if weather_avg.avg_precipitation and weather_avg.avg_precipitation > 5:
+                    category = '🌧️ Regnerisch (>5mm)'
+                elif weather_avg.avg_sunshine and weather_avg.avg_sunshine > 12:
+                    category = '🌞 Sehr Sonnig (>12h)'
+                elif weather_avg.avg_sunshine and weather_avg.avg_sunshine > 8:
+                    category = '☀️ Sonnig (8-12h)'
+                # else: Skip unclear weather (not enough rain or sun)
+                
+                if category:  # Only add if we have a clear category
+                    weather_data.append({
+                        'chart_date': chart_date,
+                        'weather_category': category,
+                        'avg_sunshine': weather_avg.avg_sunshine or 0,
+                        'avg_precipitation': weather_avg.avg_precipitation or 0,
+                        'avg_temperature': weather_avg.avg_temperature or 0
+                    })
+        
+        if not weather_data:
+            return pd.DataFrame()
+        
+        # Create DataFrame with weather categories for each chart date
+        weather_df = pd.DataFrame(weather_data)
+        
+        # Now get audio features for each chart, joined with weather category
+        results = []
+        
+        for _, weather_row in weather_df.iterrows():
+            chart_date = weather_row['chart_date']
+            category = weather_row['weather_category']
+            
+            # Get all tracks from this chart
+            tracks_query = self.db.query(
+                DimTrack.track_id,
+                DimTrack.danceability,
+                DimTrack.energy,
+                DimTrack.instrumentalness,
+                DimTrack.loudness,
+                DimTrack.valence,
+                DimTrack.tempo,
+                DimTrack.acousticness
+            ).join(
+                FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
+            ).join(
+                DimTime, FactTrackChart.date_id == DimTime.date_id
+            ).filter(
+                DimTime.date == chart_date,
+                DimTrack.danceability.isnot(None)
+            )
+            
+            if country:
+                tracks_query = tracks_query.filter(FactTrackChart.country == country)
+            
+            tracks = tracks_query.all()
+            
+            for track in tracks:
+                results.append({
+                    'weather_category': category,
+                    'avg_sunshine': weather_row['avg_sunshine'],
+                    'avg_precipitation': weather_row['avg_precipitation'],
+                    'avg_temperature': weather_row['avg_temperature'],
+                    'track_id': track.track_id,
+                    'danceability': track.danceability,
+                    'energy': track.energy,
+                    'instrumentalness': track.instrumentalness,
+                    'loudness': track.loudness,
+                    'valence': track.valence,
+                    'tempo': track.tempo,
+                    'acousticness': track.acousticness
+                })
+        
+        if not results:
+            return pd.DataFrame()
+        
+        # Aggregate by weather category
+        results_df = pd.DataFrame(results)
+        
+        grouped = results_df.groupby('weather_category').agg({
+            'avg_sunshine': 'mean',        
+            'avg_precipitation': 'mean',   
+            'avg_temperature': 'mean',     
+            'danceability': 'mean',
+            'energy': 'mean',
+            'instrumentalness': 'mean',
+            'loudness': 'mean',
+            'valence': 'mean',
+            'tempo': 'mean',
+            'acousticness': 'mean',
+            'track_id': 'count'  
+        }).reset_index()
+        
+        # Rename and add metrics
+        grouped.rename(columns={'track_id': 'chart_entries'}, inplace=True)
+        
+        # Count unique tracks per category
+        unique_tracks = results_df.groupby('weather_category')['track_id'].nunique().reset_index()
+        unique_tracks.rename(columns={'track_id': 'unique_tracks'}, inplace=True)
+        
+        # Merge
+        final_df = grouped.merge(unique_tracks, on='weather_category')
+        
+        # Sort: Regnerisch first, then Sonnig, then Sehr Sonnig
+        category_order = {'🌧️ Regnerisch (>5mm)': 0, '☀️ Sonnig (8-12h)': 1, '🌞 Sehr Sonnig (>12h)': 2}
+        if not final_df.empty:
+            final_df['sort_order'] = final_df['weather_category'].map(category_order)
+            final_df = final_df.sort_values('sort_order').drop('sort_order', axis=1)
+        
+        return final_df
     
     def get_danceability_by_sunshine(self, country: str = 'de') -> pd.DataFrame:
         """Danceability korreliert mit Sonnenstunden"""
@@ -133,106 +502,6 @@ class SoundOfSeasonsStats:
         
         return pd.read_sql(query.statement, self.db.bind)
     
-    def get_energy_by_temperature(self, country: str = 'de') -> pd.DataFrame:
-        """Track Energy Level nach Temperatur"""
-        query = self.db.query(
-            DimWeather.temperature_avg.label('temperature'),
-            DimWeather.sunshine_hours.label('sunshine'),
-            func.avg(DimTrack.energy).label('avg_energy'),
-            func.avg(DimTrack.tempo).label('avg_tempo'),
-            func.avg(DimTrack.danceability).label('avg_danceability'),
-            DimTime.season,
-            func.count(FactTrackChart.fact_id).label('sample_size')
-        ).join(
-            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
-        ).join(
-            DimWeather, FactTrackChart.weather_id == DimWeather.weather_id
-        ).join(
-            DimTime, FactTrackChart.date_id == DimTime.date_id
-        ).filter(
-            DimTrack.energy.isnot(None)
-        )
-        
-        if country:
-            query = query.filter(FactTrackChart.country == country)
-        
-        query = query.group_by(
-            DimWeather.temperature_avg,
-            DimWeather.sunshine_hours,
-            DimTime.season
-        ).having(
-            func.count(FactTrackChart.fact_id) > 5
-        )
-        
-        return pd.read_sql(query.statement, self.db.bind)
-    
-    def get_loudness_on_rainy_days(self, country: str = 'de') -> pd.DataFrame:
-        """Loudness/Intensität an Regentagen vs Trockenen Tagen"""
-        is_rainy = case(
-            (DimWeather.precipitation_mm > 10, 'Stark Regnerisch (>10mm)'),
-            (DimWeather.precipitation_mm > 5, 'Regnerisch (5-10mm)'),
-            (DimWeather.precipitation_mm > 0, 'Leichter Regen (<5mm)'),
-            else_='Trocken'
-        )
-        
-        query = self.db.query(
-            is_rainy.label('rain_category'),
-            func.avg(DimWeather.precipitation_mm).label('avg_precipitation'),
-            func.avg(DimTrack.loudness).label('avg_loudness'),
-            func.avg(DimTrack.energy).label('avg_energy'),
-            func.avg(DimTrack.valence).label('avg_valence'),
-            func.count(FactTrackChart.fact_id).label('sample_size')
-        ).join(
-            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
-        ).join(
-            DimWeather, FactTrackChart.weather_id == DimWeather.weather_id
-        ).filter(
-            DimTrack.loudness.isnot(None)
-        )
-        
-        if country:
-            query = query.filter(FactTrackChart.country == country)
-        
-        query = query.group_by(
-            is_rainy
-        ).having(
-            func.count(FactTrackChart.fact_id) > 20
-        )
-        
-        return pd.read_sql(query.statement, self.db.bind)
-    
-    def get_weather_audio_correlation(self, country: str = 'de') -> pd.DataFrame:
-        """Korrelations-Matrix: Wetter × Audio Features"""
-        query = self.db.query(
-            DimWeather.temperature_avg.label('temperature'),
-            DimWeather.precipitation_mm.label('precipitation'),
-            DimWeather.sunshine_hours.label('sunshine'),
-            DimWeather.wind_speed_kmh.label('wind_speed'),
-            DimTrack.tempo,
-            DimTrack.energy,
-            DimTrack.danceability,
-            DimTrack.valence,
-            DimTrack.loudness,
-            DimTrack.acousticness
-        ).join(
-            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
-        ).join(
-            DimWeather, FactTrackChart.weather_id == DimWeather.weather_id
-        ).filter(
-            DimTrack.tempo.isnot(None)
-        )
-        
-        if country:
-            query = query.filter(FactTrackChart.country == country)
-        
-        df = pd.read_sql(query.statement, self.db.bind)
-        
-        if len(df) > 0:
-            correlation = df.corr()
-            return correlation
-        
-        return pd.DataFrame()
-    
     def get_seasonal_streaming_trends(self, country: str = None) -> pd.DataFrame:
         """Seasonal Trends"""
         query = self.db.query(
@@ -254,111 +523,6 @@ class SoundOfSeasonsStats:
         
         return pd.read_sql(query.statement, self.db.bind)
     
-    def get_country_comparison(self) -> pd.DataFrame:
-        """Vergleich Deutschland vs Global Charts"""
-        query = self.db.query(
-            FactTrackChart.country,
-            DimTime.season,
-            func.avg(FactTrackChart.stream_count).label('avg_streams'),
-            func.sum(FactTrackChart.stream_count).label('total_streams')
-        ).join(
-            DimTime, FactTrackChart.date_id == DimTime.date_id
-        ).group_by(
-            FactTrackChart.country, DimTime.season
-        ).order_by(
-            DimTime.season
-        )
-        
-        return pd.read_sql(query.statement, self.db.bind)
-    
-    def get_weather_impact(self, country: str = None) -> pd.DataFrame:
-        """Temperatur vs Streaming"""
-        temp_category = case(
-            (DimWeather.temperature_avg < 5, 'Kalt (< 5°C)'),
-            (DimWeather.temperature_avg < 15, 'Kühl (5-15°C)'),
-            (DimWeather.temperature_avg < 25, 'Mild (15-25°C)'),
-            else_='Heiß (> 25°C)'
-        )
-        
-        query = self.db.query(
-            temp_category.label('temperature_range'),
-            func.avg(FactTrackChart.stream_count).label('avg_streams'),
-            func.sum(FactTrackChart.stream_count).label('total_streams')
-        ).join(
-            FactTrackChart, DimWeather.weather_id == FactTrackChart.weather_id
-        )
-        
-        if country:
-            query = query.filter(FactTrackChart.country == country)
-        
-        query = query.group_by(temp_category)
-        
-        return pd.read_sql(query.statement, self.db.bind)
-    
-    def get_mood_by_weather(self, country: str = None) -> pd.DataFrame:
-        """Track Mood nach Wetterlage"""
-        weather_condition = case(
-            (DimWeather.precipitation_mm > 5, 'Regnerisch'),
-            (DimWeather.sunshine_hours > 8, 'Sonnig'),
-            (DimWeather.temperature_avg < 5, 'Kalt'),
-            else_='Normal'
-        )
-        
-        query = self.db.query(
-            weather_condition.label('weather'),
-            func.avg(DimTrack.valence).label('avg_valence'),
-            func.avg(DimTrack.energy).label('avg_energy'),
-            func.avg(DimTrack.danceability).label('avg_danceability'),
-            func.count(FactTrackChart.fact_id).label('sample_size')
-        ).join(
-            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
-        ).join(
-            DimWeather, FactTrackChart.weather_id == DimWeather.weather_id
-        ).filter(
-            DimTrack.valence.isnot(None),
-            DimTrack.energy.isnot(None),
-            DimTrack.danceability.isnot(None)
-        )
-        
-        if country:
-            query = query.filter(FactTrackChart.country == country)
-        
-        query = query.group_by(weather_condition).having(
-            func.count(FactTrackChart.fact_id) > 10
-        )
-        
-        return pd.read_sql(query.statement, self.db.bind)
-        
-    def get_top_tracks_by_season(self, country: str = None, limit: int = 5) -> pd.DataFrame:
-        """Top Tracks pro Jahreszeit"""
-        query = self.db.query(
-            DimTime.season,
-            DimTrack.track_name,
-            DimTrack.artist_names,
-            func.sum(FactTrackChart.stream_count).label('total_streams')
-        ).join(
-            FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
-        ).join(
-            DimTime, FactTrackChart.date_id == DimTime.date_id
-        )
-        
-        if country:
-            query = query.filter(FactTrackChart.country == country)
-        
-        query = query.group_by(
-            DimTime.season, DimTrack.track_name, DimTrack.artist_names
-        ).order_by(
-            DimTime.season, func.sum(FactTrackChart.stream_count).desc()
-        )
-        
-        df = pd.read_sql(query.statement, self.db.bind)
-        
-        result = (df.sort_values(['season', 'total_streams'], ascending=[True, False])
-                    .groupby('season', as_index=False)
-                    .head(limit))
-        
-        return result
-    
     def get_acoustic_vs_electronic(self, country: str = None) -> pd.DataFrame:
         """Akustisch vs Elektronisch nach Wetter"""
         acoustic_category = case(
@@ -369,8 +533,7 @@ class SoundOfSeasonsStats:
         
         weather_condition = case(
             (DimWeather.precipitation_mm > 5, 'Regen'),
-            (DimWeather.sunshine_hours > 8, 'Sonne'),
-            else_='Normal'
+            (DimWeather.sunshine_hours > 8, 'Sonne')
         )
         
         query = self.db.query(
@@ -436,108 +599,101 @@ class SoundOfSeasonsStats:
         
         return result
     
-    def get_winter_summer_comparison(self, country: str = 'de') -> pd.DataFrame:
-        """Winter vs Sommer: Audio Feature Vergleich"""
-        season_filter = DimTime.season.in_(['Winter', 'Sommer'])
+    def get_lockdown_vs_normal_comparison(self, country: str = 'de') -> pd.DataFrame:
+        """
+        Lockdown-Phasen vs 2025 
+        """
+        from datetime import date
         
-        query = self.db.query(
-            DimTime.season,
+        # Define lockdown periods
+        lockdown_periods = [
+            (date(2020, 3, 22), date(2020, 5, 31)),   # Phase 1: Erster harter Lockdown
+            (date(2020, 11, 2), date(2021, 5, 31)),   # Phase 2: Lockdown Light → Hart
+            (date(2021, 12, 2), date(2022, 3, 31))    # Phase 3: 2G-Plus
+        ]
+        
+        # Normal year
+        normal_start = date(2025, 1, 1)
+        normal_end = date(2025, 12, 31)
+        
+        # Build OR condition for all lockdown periods
+        lockdown_conditions = [
+            DimTime.date.between(start, end) for start, end in lockdown_periods
+        ]
+        
+        # Lockdown data 
+        lockdown_data = self.db.query(
             func.avg(DimTrack.valence).label('avg_valence'),
             func.avg(DimTrack.energy).label('avg_energy'),
-            func.avg(DimTrack.tempo).label('avg_tempo'),
             func.avg(DimTrack.danceability).label('avg_danceability'),
-            func.avg(DimTrack.acousticness).label('avg_acousticness'),
-            func.avg(DimTrack.loudness).label('avg_loudness'),
             func.count(FactTrackChart.fact_id).label('sample_size')
         ).join(
             FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
         ).join(
             DimTime, FactTrackChart.date_id == DimTime.date_id
         ).filter(
-            season_filter,
+            or_(*lockdown_conditions),
             DimTrack.valence.isnot(None),
             DimTrack.energy.isnot(None),
-            DimTrack.tempo.isnot(None)
+            DimTrack.danceability.isnot(None)
         )
         
         if country:
-            query = query.filter(FactTrackChart.country == country)
+            lockdown_data = lockdown_data.filter(FactTrackChart.country == country)
         
-        query = query.group_by(DimTime.season)
+        lockdown_data = lockdown_data.first()
         
-        df = pd.read_sql(query.statement, self.db.bind)
-        
-        # Calculate differences
-        if len(df) == 2:
-            winter = df[df['season'] == 'Winter'].iloc[0]
-            sommer = df[df['season'] == 'Sommer'].iloc[0]
-            
-            diff = pd.DataFrame([{
-                'feature': 'Valence',
-                'winter': winter['avg_valence'],
-                'sommer': sommer['avg_valence'],
-                'difference': sommer['avg_valence'] - winter['avg_valence'],
-                'diff_pct': ((sommer['avg_valence'] - winter['avg_valence']) / winter['avg_valence']) * 100
-            }, {
-                'feature': 'Energy',
-                'winter': winter['avg_energy'],
-                'sommer': sommer['avg_energy'],
-                'difference': sommer['avg_energy'] - winter['avg_energy'],
-                'diff_pct': ((sommer['avg_energy'] - winter['avg_energy']) / winter['avg_energy']) * 100
-            }, {
-                'feature': 'Tempo',
-                'winter': winter['avg_tempo'],
-                'sommer': sommer['avg_tempo'],
-                'difference': sommer['avg_tempo'] - winter['avg_tempo'],
-                'diff_pct': ((sommer['avg_tempo'] - winter['avg_tempo']) / winter['avg_tempo']) * 100
-            }, {
-                'feature': 'Danceability',
-                'winter': winter['avg_danceability'],
-                'sommer': sommer['avg_danceability'],
-                'difference': sommer['avg_danceability'] - winter['avg_danceability'],
-                'diff_pct': ((sommer['avg_danceability'] - winter['avg_danceability']) / winter['avg_danceability']) * 100
-            }, {
-                'feature': 'Acousticness',
-                'winter': winter['avg_acousticness'],
-                'sommer': sommer['avg_acousticness'],
-                'difference': sommer['avg_acousticness'] - winter['avg_acousticness'],
-                'diff_pct': ((sommer['avg_acousticness'] - winter['avg_acousticness']) / winter['avg_acousticness']) * 100
-            }, {
-                'feature': 'Loudness',
-                'winter': winter['avg_loudness'],
-                'sommer': sommer['avg_loudness'],
-                'difference': sommer['avg_loudness'] - winter['avg_loudness'],
-                'diff_pct': ((sommer['avg_loudness'] - winter['avg_loudness']) / abs(winter['avg_loudness'])) * 100
-            }])
-            
-            return diff
-        
-        return df
-
-    def get_seasonal_audio_profile(self, country: str = 'de') -> pd.DataFrame:
-        """Alle 4 Jahreszeiten - Audio Feature Profile"""
-        query = self.db.query(
-            DimTime.season,
-            func.avg(DimTrack.valence).label('valence'),
-            func.avg(DimTrack.energy).label('energy'),
-            func.avg(DimTrack.tempo).label('tempo'),
-            func.avg(DimTrack.danceability).label('danceability'),
-            func.avg(DimTrack.acousticness).label('acousticness'),
+        # 2025 
+        normal_data = self.db.query(
+            func.avg(DimTrack.valence).label('avg_valence'),
+            func.avg(DimTrack.energy).label('avg_energy'),
+            func.avg(DimTrack.danceability).label('avg_danceability'),
             func.count(FactTrackChart.fact_id).label('sample_size')
         ).join(
             FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
         ).join(
             DimTime, FactTrackChart.date_id == DimTime.date_id
         ).filter(
-            DimTrack.valence.isnot(None)
+            DimTime.date.between(normal_start, normal_end),
+            DimTrack.valence.isnot(None),
+            DimTrack.energy.isnot(None),
+            DimTrack.danceability.isnot(None)
         )
         
         if country:
-            query = query.filter(FactTrackChart.country == country)
+            normal_data = normal_data.filter(FactTrackChart.country == country)
         
-        query = query.group_by(DimTime.season)
+        normal_data = normal_data.first()
         
-        return pd.read_sql(query.statement, self.db.bind)
-
+        if not lockdown_data or not normal_data:
+            return pd.DataFrame()
+        
+        # Calculate 
+        diff = pd.DataFrame([
+            {
+                'feature': 'Valence',
+                'lockdown': lockdown_data.avg_valence,
+                'normal_2025': normal_data.avg_valence,
+                'difference': normal_data.avg_valence - lockdown_data.avg_valence,
+                'diff_pct': ((normal_data.avg_valence - lockdown_data.avg_valence) / lockdown_data.avg_valence) * 100
+            },
+            {
+                'feature': 'Energy',
+                'lockdown': lockdown_data.avg_energy,
+                'normal_2025': normal_data.avg_energy,
+                'difference': normal_data.avg_energy - lockdown_data.avg_energy,
+                'diff_pct': ((normal_data.avg_energy - lockdown_data.avg_energy) / lockdown_data.avg_energy) * 100
+            },
+            {
+                'feature': 'Danceability',
+                'lockdown': lockdown_data.avg_danceability,
+                'normal_2025': normal_data.avg_danceability,
+                'difference': normal_data.avg_danceability - lockdown_data.avg_danceability,
+                'diff_pct': ((normal_data.avg_danceability - lockdown_data.avg_danceability) / lockdown_data.avg_danceability) * 100
+            }
+        ])
+        
+        return diff
+    
     def close(self):
         self.db.close()

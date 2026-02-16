@@ -247,7 +247,7 @@ async def main():
     missing_features_old = get_missing_features()
     
     if not any([missing_weather, missing_charts, missing_features_old]):
-        logger.info("\n✅ Database is up to date!")
+        logger.info("\nDatabase is up to date!")
         return
     
     # Fetch

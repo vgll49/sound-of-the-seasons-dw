@@ -11,17 +11,6 @@ logger = logging.getLogger(__name__)
 def populate_dim_time(start_date=None, end_date=None):
     """
     Populate DimTime dimension
-    
-    Args:
-        start_date: Start date (default: config.START_DATE)
-        end_date: End date (default: config.END_DATE)
-    
-    Usage:
-        # Initial load (uses config)
-        populate_dim_time()
-        
-        # Extend to today
-        populate_dim_time(start_date=latest_date + 1, end_date=date.today())
     """
     
     # Use config defaults if not provided
