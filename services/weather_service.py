@@ -8,7 +8,7 @@ from config import WEATHER_LOCATIONS
 logger = logging.getLogger(__name__)
 
 class WeatherService:
-    """Fetch weather for all 16 Bundesländer and compute daily averages"""
+    """Fetch weather and compute daily averages"""
     
     BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
     

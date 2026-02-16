@@ -67,7 +67,7 @@ class SoundOfSeasonsStats:
 
     def get_current_top_tracks(self, country: str = 'de', limit: int = 3) -> pd.DataFrame:
         """
-        Current week's top 3 tracks - simple version without changes
+        Current week's top 3 tracks 
         Returns: track_name, artist, image_url, streams, position
         """
         # Get latest Sunday
@@ -168,7 +168,7 @@ class SoundOfSeasonsStats:
             DimTrack.valence.isnot(None)
         ).first()
         
-        # Count UNIQUE songs across both charts (with features)
+        # Count UNIQUE songs across both charts
         unique_songs_count = self.db.query(
             func.count(func.distinct(DimTrack.track_id))
         ).join(
@@ -181,7 +181,7 @@ class SoundOfSeasonsStats:
             DimTrack.valence.isnot(None)
         ).scalar()
         
-        # Current week - Weather (7 Tage vor Chart)
+        # Current week - Weather 
         current_weather = self.db.query(
             func.avg(DimWeather.temperature_avg).label('temperature'),
             func.avg(DimWeather.sunshine_hours).label('sunshine'),
@@ -193,7 +193,7 @@ class SoundOfSeasonsStats:
             DimTime.date.between(current_weather_start, current_weather_end)
         ).first()
         
-        # Previous week - Weather (7 Tage vor vorherigem Chart)
+        # Previous week - Weather 
         previous_weather = self.db.query(
             func.avg(DimWeather.temperature_avg).label('temperature'),
             func.avg(DimWeather.sunshine_hours).label('sunshine'),
@@ -364,7 +364,6 @@ class SoundOfSeasonsStats:
                     category = '🌞 Sehr Sonnig (>12h)'
                 elif weather_avg.avg_sunshine and weather_avg.avg_sunshine > 8:
                     category = '☀️ Sonnig (8-12h)'
-                # else: Skip unclear weather (not enough rain or sun)
                 
                 if category:  # Only add if we have a clear category
                     weather_data.append({
@@ -378,10 +377,8 @@ class SoundOfSeasonsStats:
         if not weather_data:
             return pd.DataFrame()
         
-        # Create DataFrame with weather categories for each chart date
         weather_df = pd.DataFrame(weather_data)
         
-        # Now get audio features for each chart, joined with weather category
         results = []
         
         for _, weather_row in weather_df.iterrows():
@@ -458,7 +455,6 @@ class SoundOfSeasonsStats:
         # Merge
         final_df = grouped.merge(unique_tracks, on='weather_category')
         
-        # Sort: Regnerisch first, then Sonnig, then Sehr Sonnig
         category_order = {'🌧️ Regnerisch (>5mm)': 0, '☀️ Sonnig (8-12h)': 1, '🌞 Sehr Sonnig (>12h)': 2}
         if not final_df.empty:
             final_df['sort_order'] = final_df['weather_category'].map(category_order)
@@ -467,7 +463,7 @@ class SoundOfSeasonsStats:
         return final_df
     
     def get_danceability_by_sunshine(self, country: str = 'de') -> pd.DataFrame:
-        """Danceability korreliert mit Sonnenstunden"""
+        """Danceability & Valence korrelieren mit Sonnenstunden"""
         sunshine_category = case(
             (DimWeather.sunshine_hours == 0, '0h (Dunkel)'),
             (DimWeather.sunshine_hours < 4, '1-4h'),
@@ -480,15 +476,14 @@ class SoundOfSeasonsStats:
             sunshine_category.label('sunshine_hours'),
             func.avg(DimWeather.sunshine_hours).label('exact_sunshine'),
             func.avg(DimTrack.danceability).label('avg_danceability'),
-            func.avg(DimTrack.valence).label('avg_valence'),
-            func.avg(DimTrack.energy).label('avg_energy'),
-            func.count(FactTrackChart.fact_id).label('sample_size')
+            func.avg(DimTrack.valence).label('avg_valence')
         ).join(
             FactTrackChart, DimTrack.track_id == FactTrackChart.track_id
         ).join(
             DimWeather, FactTrackChart.weather_id == DimWeather.weather_id
         ).filter(
-            DimTrack.danceability.isnot(None)
+            DimTrack.danceability.isnot(None),
+            DimTrack.valence.isnot(None)  
         )
         
         if country:
@@ -608,7 +603,7 @@ class SoundOfSeasonsStats:
         # Define lockdown periods
         lockdown_periods = [
             (date(2020, 3, 22), date(2020, 5, 31)),   # Phase 1: Erster harter Lockdown
-            (date(2020, 11, 2), date(2021, 5, 31)),   # Phase 2: Lockdown Light → Hart
+            (date(2020, 11, 2), date(2021, 5, 31)),   # Phase 2: Lockdown Light, danach verschärft
             (date(2021, 12, 2), date(2022, 3, 31))    # Phase 3: 2G-Plus
         ]
         
@@ -616,7 +611,6 @@ class SoundOfSeasonsStats:
         normal_start = date(2025, 1, 1)
         normal_end = date(2025, 12, 31)
         
-        # Build OR condition for all lockdown periods
         lockdown_conditions = [
             DimTime.date.between(start, end) for start, end in lockdown_periods
         ]

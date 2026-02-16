@@ -430,7 +430,6 @@
         </div>
 
         <div class="chart-grid">
-            <!-- NEW: Timeline Charts -->
             <div class="chart-card full-width">
                 {{ charts.audio_features_timeline | safe }}
             </div>
@@ -456,21 +455,10 @@
         </div>
 
         <div class="chart-grid">
-            <!-- NEW: Comprehensive Weather Charts (parallel zu Seasonal) -->
             <div class="chart-card full-width">
                 {{ charts.audio_features_weather | safe }}
             </div>
-            
-            <div class="chart-card">
-                {{ charts.tempo_weather_new | safe }}
-            </div>
-            
-            <div class="chart-card">
-                {{ charts.loudness_weather_new | safe }}
-            </div>
-            
-            <!-- Existing detailed weather charts -->
-            
+                                    
             <div class="chart-card full-width">
                 {{ charts.danceability_sunshine | safe }}
             </div>

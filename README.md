@@ -6,6 +6,13 @@ Analyse des Einflusses von Wetter und Jahreszeiten auf Spotify Charts (Deutschla
 
 ## Quick Start
 
+Vor der Durchführung muss **Python 3.11 oder höher** installiert sein und die benötigten Pakete aus `requirements.txt`:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
 ### 1. ETL ausführen
 ```bash
 python etl/run_etl.py

@@ -55,8 +55,6 @@ def generate_dashboard(country: str = 'de'):
         
         # Weather Charts
         'audio_features_weather': charts.create_audio_features_by_weather(audio_by_weather_df),
-        'tempo_weather_new': charts.create_tempo_by_weather(audio_by_weather_df),
-        'loudness_weather_new': charts.create_loudness_by_weather(audio_by_weather_df),
         'danceability_sunshine': charts.create_danceability_sunshine_chart(danceability_sun_df),
         
         # Music Analysis Charts
