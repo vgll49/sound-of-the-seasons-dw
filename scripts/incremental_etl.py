@@ -142,7 +142,7 @@ async def fetch_and_load_charts(app_id, api_key, missing_dates):
     logger.info(f"Fetching {len(missing_dates)} charts...")
     
     loader = DataLoader()
-    all_new_track_ids = []  # ← Only NEW tracks
+    all_new_track_ids = []  
     total = 0
     
     async with aiohttp.ClientSession() as session:
