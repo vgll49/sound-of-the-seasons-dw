@@ -1,6 +1,19 @@
 # Sound of the Seasons - Data Warehouse
 
+GitHub Page: https://vgll49.github.io/sound-of-the-seasons-dw/
+⚠️ Hinweis: Die automatische Aktualisierung funktioniert nur mit gültigen API-Tokens und kann stoppen, wenn diese ablaufen oder Limits erreicht werden. Soundcharts hat nur 1000 Free Tokens
+
 Analyse des Einflusses von Wetter und Jahreszeiten auf Spotify Charts (Deutschland, 2020-2026). Erneuert sich Wöchentlich über Git Action. 
+
+---
+
+##  Features
+
+- ETL-Pipeline zur Aggregation von Spotify- und Wetterdaten
+- Automatisierte Updates (wöchentlich via GitHub Actions)
+- Datenanalyse mit SQL
+- Generierung eines interaktiven Dashboards (HTML)
+- End-to-End Pipeline: Daten → Verarbeitung → Visualisierung
 
 ---
 
